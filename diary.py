@@ -10,6 +10,7 @@ from database import (
     get_daily_totals, clear_daily_entries, get_entries_by_meal,
     get_recent_foods
 )
+
 from keyboards import create_date_selection_keyboard, create_meal_types_keyboard, create_food_entry_keyboard, \
     create_recent_foods_keyboard
 from food_api import search_food, get_food_nutrients, get_branded_food_info
@@ -222,7 +223,7 @@ async def handle_meal_type_selection(callback_query: CallbackQuery, state: FSMCo
 
 
 async def process_food_entry(message: types.Message, state: FSMContext):
-    """Обрабатывает ввод названия продукта."""
+    """Обрабатывает ввод названия продукта и показывает найденные варианты."""
     food_name = message.text.strip()
 
     if not food_name or len(food_name) < 2:
@@ -231,96 +232,97 @@ async def process_food_entry(message: types.Message, state: FSMContext):
 
     logger.info(f"Searching for food: {food_name}")
 
-    # Сохраняем введенное название
-    await state.update_data(food_query=food_name)
-
     # Ищем продукты через API
     search_results = search_food(food_name)
     logger.info(f"Search results: {search_results}")
 
     if search_results:
-        # Создаем клавиатуру с результатами поиска
-        keyboard = []
+        # Сохраняем результаты поиска в состоянии
+        await state.update_data(search_results=search_results)
+
+        # ВНИМАНИЕ!!! Вот исправление:
+        keyboard = types.InlineKeyboardMarkup(inline_keyboard=[])
 
         for i, food in enumerate(search_results):
-            display_name = food['food_name']
-            food_type = food.get('food_type', 'common')  # Значение по умолчанию
-            callback_data = f"food:{i}:{food_type}"
-
+            display_name = food.get('food_name', 'Неизвестный продукт')
             if food.get('brand_name'):
                 display_name += f" ({food['brand_name']})"
 
-            # Ограничиваем длину текста для кнопки
             if len(display_name) > 30:
                 display_name = display_name[:27] + "..."
 
-            keyboard.append([
-                types.InlineKeyboardButton(
-                    text=display_name,
-                    callback_data=f"food:{i}:{food['food_type']}"
-                )
-            ])
+            button = types.InlineKeyboardButton(
+                text=display_name,
+                callback_data=f"select_food:{i}"
+            )
+            keyboard.inline_keyboard.append([button])
 
-        # Добавляем кнопку отмены
-        keyboard.append([
+        # Кнопка назад
+        keyboard.inline_keyboard.append([
             types.InlineKeyboardButton(
                 text="◀️ Назад",
                 callback_data="return_to_meal_selection"
             )
         ])
 
-        # Сохраняем результаты поиска
-        await state.update_data(search_results=search_results)
-
         await message.answer(
             "Выберите продукт из списка:",
-            reply_markup=types.InlineKeyboardMarkup(inline_keyboard=keyboard)
+            reply_markup=keyboard
         )
 
         # Устанавливаем состояние выбора продукта
         await state.set_state(DiaryStates.selecting_food)
     else:
         await message.answer(
-            "Не удалось найти продукты по вашему запросу. Попробуйте другое название."
+            "❌ Не удалось найти продукты по вашему запросу. Попробуйте другое название."
         )
 
 
+
 async def handle_food_selection(callback_query: CallbackQuery, state: FSMContext):
-    """Обрабатывает выбор продукта из результатов поиска."""
-    data = callback_query.data.split(':')
-    if len(data) < 3:
-        await callback_query.answer("Некорректные данные")
+    """Обрабатывает выбор продукта из списка поиска."""
+    data = callback_query.data
+
+    if not data.startswith("select_food:"):
+        await callback_query.answer("Некорректный выбор.")
         return
 
-    index = int(data[1])
-    food_type = data[2]
+    index_str = data.split(":")[1]
 
-    # Получаем выбранный продукт из состояния
+    try:
+        index = int(index_str)
+    except ValueError:
+        await callback_query.answer("Ошибка при выборе продукта.")
+        return
+
+    # Получаем список продуктов из состояния
     user_data = await state.get_data()
     search_results = user_data.get('search_results', [])
 
-    if not search_results or index >= len(search_results):
-        await callback_query.answer("Продукт не найден")
+    if index >= len(search_results):
+        await callback_query.answer("Продукт не найден.")
         return
 
     selected_food = search_results[index]
 
-    # Получаем подробную информацию о продукте
+    food_type = selected_food.get('food_type', 'common')
+
+    # Получаем детальную информацию о продукте
     if food_type == 'common':
-        food_info = get_food_nutrients(selected_food['food_name'], selected_food.get('tag_id'))
-    else:  # branded
+        food_info = get_food_nutrients(selected_food['food_name'])
+    else:
         food_info = get_branded_food_info(selected_food.get('nix_item_id'))
 
     if not food_info:
         await callback_query.message.answer(
-            "Не удалось получить информацию о продукте. Попробуйте выбрать другой продукт.")
+            "Не удалось получить информацию о продукте. Попробуйте выбрать другой продукт."
+        )
         await callback_query.answer()
         return
 
-    # Сохраняем информацию о продукте
+    # Сохраняем выбранный продукт
     await state.update_data(selected_food=food_info)
 
-    # Запрашиваем количество продукта
     await callback_query.message.answer(
         f"Выбран продукт: <b>{food_info['food_name']}</b>\n\n"
         f"Пищевая ценность (на {food_info['serving_qty']} {food_info['serving_unit']}):\n"
@@ -332,9 +334,11 @@ async def handle_food_selection(callback_query: CallbackQuery, state: FSMContext
         parse_mode="HTML"
     )
 
-    # Устанавливаем состояние ввода количества
+    # Переходим к следующему состоянию — ввод количества продукта
     await state.set_state(DiaryStates.entering_amount)
+
     await callback_query.answer()
+
 
 
 async def process_food_amount(message: types.Message, state: FSMContext):
@@ -577,6 +581,60 @@ async def handle_recent_food_selection(callback_query: CallbackQuery, state: FSM
     await state.clear()
     await callback_query.answer()
 
+
+async def handle_food_selection(callback_query: types.CallbackQuery, state: FSMContext):
+    """Обрабатывает выбор продукта из списка поиска."""
+    data = callback_query.data
+
+    index_str = data.split(":")[1]
+
+    try:
+        index = int(index_str)
+    except ValueError:
+        await callback_query.answer("Ошибка при выборе продукта.")
+        return
+
+    # Получаем список продуктов из состояния
+    user_data = await state.get_data()
+    search_results = user_data.get('search_results', [])
+
+    if index >= len(search_results):
+        await callback_query.answer("Продукт не найден.")
+        return
+
+    selected_food = search_results[index]
+
+    food_type = selected_food.get('food_type', 'common')
+
+    # Получаем детальную информацию о продукте
+    if food_type == 'common':
+        food_info = get_food_nutrients(selected_food['food_name'])
+    else:
+        food_info = get_branded_food_info(selected_food.get('nix_item_id'))
+
+    if not food_info:
+        await callback_query.message.answer(
+            "Не удалось получить информацию о продукте. Попробуйте выбрать другой продукт."
+        )
+        await callback_query.answer()
+        return
+
+    # Сохраняем выбранный продукт
+    await state.update_data(selected_food=food_info)
+
+    await callback_query.message.answer(
+        f"Выбран продукт: <b>{food_info['food_name']}</b>\n\n"
+        f"Пищевая ценность (на {food_info['serving_qty']} {food_info['serving_unit']}):\n"
+        f"• Калории: {food_info['calories']:.0f} ккал\n"
+        f"• Белки: {food_info['protein']:.1f} г\n"
+        f"• Жиры: {food_info['fat']:.1f} г\n"
+        f"• Углеводы: {food_info['carbs']:.1f} г\n\n"
+        f"Введите количество в граммах:",
+        parse_mode="HTML"
+    )
+
+    await state.set_state(DiaryStates.entering_amount)
+    await callback_query.answer()
 
 async def return_to_meal_selection(callback_query: CallbackQuery, state: FSMContext):
     """Возвращает к выбору приема пищи."""

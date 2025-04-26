@@ -9,6 +9,7 @@ from aiogram.fsm.state import State, StatesGroup
 from config import ACTIVITY_LEVELS
 from utils import calculate_bmi, get_bmi_category, calculate_tdee, get_goal_calories, calculate_macronutrients
 from database import create_user, get_user, update_user
+
 from keyboards import (
     start_keyboard, gender_keyboard, activity_keyboard,
     goal_keyboard, after_calories_keyboard

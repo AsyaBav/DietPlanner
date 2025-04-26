@@ -3,6 +3,8 @@ import os
 from flask import Flask, render_template, jsonify
 import time
 
+
+
 # Импорт модулей бота
 from run_bot import start_bot_thread
 
@@ -10,11 +12,15 @@ from run_bot import start_bot_thread
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
+
 # Создаем Flask приложение
 app = Flask(__name__)
 
 # Запуск бота в отдельном потоке
 bot_thread = None
+
+
 
 @app.route('/')
 def index():
