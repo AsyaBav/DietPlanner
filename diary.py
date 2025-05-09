@@ -1,9 +1,32 @@
+"""
+📘 dairy.py — модуль для взаимодействия с дневником питания в Telegram-боте
+
+Этот модуль реализует основную логику ведения дневника питания пользователя:
+- Просмотр дневника за выбранную дату с подсчетом калорий и нутриентов.
+- Добавление продуктов по приему пищи (завтрак, обед и т.п.) с использованием поиска по API (FatSecret).
+- Работа с недавно добавленными продуктами.
+- Подтверждение или отмена ввода данных.
+- Очистка дневника за конкретную дату.
+- Навигация по датам с помощью inline-кнопок.
+- Поддержка состояний FSM (Finite State Machine) для управления диалогом пользователя.
+
+Модуль использует:
+- aiogram для Telegram-бота,
+- собственные утилиты (`utils.py`, `keyboards.py`, `food_api.py`, `database.py`) для работы с БД, клавиатурами и API,
+- систему логирования для отладки.
+
+Функции организованы по сценариям: отображение дневника, добавление продуктов, выбор даты/приема пищи, обработка ввода и подтверждений.
+"""
+
+
 import logging
+import json
+
 from datetime import datetime, timedelta
 from aiogram import types
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery
+from aiogram.types import Message, CallbackQuery
 
 from database import (
     get_user, get_daily_entries, add_food_entry,
@@ -11,8 +34,7 @@ from database import (
     get_recent_foods
 )
 
-from keyboards import create_date_selection_keyboard, create_meal_types_keyboard, create_food_entry_keyboard, \
-    create_recent_foods_keyboard
+from keyboards import create_date_selection_keyboard, create_meal_types_keyboard, create_food_entry_keyboard,  create_recent_foods_keyboard
 from food_api import search_food, get_food_nutrients, get_branded_food_info
 from utils import format_date, get_progress_percentage
 
@@ -21,14 +43,14 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-# Состояния для ведения дневника
+'''Состояния для ведения дневника'''
 class DiaryStates(StatesGroup):
-    selecting_date = State()
-    selecting_meal_type = State()
-    entering_food = State()
-    selecting_food = State()
-    entering_amount = State()
-    confirming_entry = State()
+    selecting_date = State()        # Выбор даты
+    selecting_meal_type = State()   # Выбор приёма пищи
+    entering_food = State()         # Ввод названия продукта
+    selecting_food = State()        # Выбор продукта из списка
+    entering_amount = State()       # Ввод веса продукта
+    confirming_entry = State()      # Подтверждение добавления
 
 
 # Состояния для трекера воды
@@ -39,7 +61,6 @@ class WaterStates(StatesGroup):
 
 async def show_diary(message: types.Message, state: FSMContext):
     """Показывает дневник питания."""
-
     # Проверяем, зарегистрирован ли пользователь
     user = get_user(message.from_user.id)
     if not user or not user.get('registration_complete'):  # Измененная проверка:
@@ -232,7 +253,7 @@ async def process_food_entry(message: types.Message, state: FSMContext):
 
     logger.info(f"Searching for food: {food_name}")
 
-    # Ищем продукты через API
+    # Ищем продукты через FatSecret API
     search_results = search_food(food_name)
     logger.info(f"Search results: {search_results}")
 
@@ -240,7 +261,6 @@ async def process_food_entry(message: types.Message, state: FSMContext):
         # Сохраняем результаты поиска в состоянии
         await state.update_data(search_results=search_results)
 
-        # ВНИМАНИЕ!!! Вот исправление:
         keyboard = types.InlineKeyboardMarkup(inline_keyboard=[])
 
         for i, food in enumerate(search_results):
@@ -257,7 +277,6 @@ async def process_food_entry(message: types.Message, state: FSMContext):
             )
             keyboard.inline_keyboard.append([button])
 
-        # Кнопка назад
         keyboard.inline_keyboard.append([
             types.InlineKeyboardButton(
                 text="◀️ Назад",
@@ -270,7 +289,6 @@ async def process_food_entry(message: types.Message, state: FSMContext):
             reply_markup=keyboard
         )
 
-        # Устанавливаем состояние выбора продукта
         await state.set_state(DiaryStates.selecting_food)
     else:
         await message.answer(
@@ -278,133 +296,42 @@ async def process_food_entry(message: types.Message, state: FSMContext):
         )
 
 
-
-async def handle_food_selection(callback_query: CallbackQuery, state: FSMContext):
-    """Обрабатывает выбор продукта из списка поиска."""
-    data = callback_query.data
-
-    if not data.startswith("select_food:"):
-        await callback_query.answer("Некорректный выбор.")
-        return
-
-    index_str = data.split(":")[1]
-
+async def process_food_amount(message: Message, state: FSMContext):
+    """Обрабатывает введенный вес"""
     try:
-        index = int(index_str)
-    except ValueError:
-        await callback_query.answer("Ошибка при выборе продукта.")
-        return
+        weight = float(message.text)
+        user_data = await state.get_data()
+        index = user_data['selected_product_index']
+        product = user_data['search_results'][index]
 
-    # Получаем список продуктов из состояния
-    user_data = await state.get_data()
-    search_results = user_data.get('search_results', [])
+        # Расчет КБЖУ для указанного веса
+        ratio = weight / 100
+        nutrients = {
+            'calories': product['calories'] * ratio,
+            'protein': product['protein'] * ratio,
+            'fat': product['fat'] * ratio,
+            'carbs': product['carbs'] * ratio
+        }
 
-    if index >= len(search_results):
-        await callback_query.answer("Продукт не найден.")
-        return
-
-    selected_food = search_results[index]
-
-    food_type = selected_food.get('food_type', 'common')
-
-    # Получаем детальную информацию о продукте
-    if food_type == 'common':
-        food_info = get_food_nutrients(selected_food['food_name'])
-    else:
-        food_info = get_branded_food_info(selected_food.get('nix_item_id'))
-
-    if not food_info:
-        await callback_query.message.answer(
-            "Не удалось получить информацию о продукте. Попробуйте выбрать другой продукт."
+        # Добавление в базу
+        success = add_food_entry(
+            user_id=message.from_user.id,
+            date=datetime.now().strftime("%Y-%m-%d"),
+            meal_type=user_data['meal_type'],
+            food_name=product['food_name'],
+            **nutrients
         )
-        await callback_query.answer()
-        return
 
-    # Сохраняем выбранный продукт
-    await state.update_data(selected_food=food_info)
+        if success:
+            await message.answer(f"✅ Добавлено {weight}г продукта")
+        else:
+            await message.answer("❌ Ошибка сохранения")
 
-    await callback_query.message.answer(
-        f"Выбран продукт: <b>{food_info['food_name']}</b>\n\n"
-        f"Пищевая ценность (на {food_info['serving_qty']} {food_info['serving_unit']}):\n"
-        f"• Калории: {food_info['calories']:.0f} ккал\n"
-        f"• Белки: {food_info['protein']:.1f} г\n"
-        f"• Жиры: {food_info['fat']:.1f} г\n"
-        f"• Углеводы: {food_info['carbs']:.1f} г\n\n"
-        f"Введите количество в граммах:",
-        parse_mode="HTML"
-    )
-
-    # Переходим к следующему состоянию — ввод количества продукта
-    await state.set_state(DiaryStates.entering_amount)
-
-    await callback_query.answer()
-
-
-
-async def process_food_amount(message: types.Message, state: FSMContext):
-    """Обрабатывает ввод количества продукта."""
-    try:
-        amount = float(message.text.strip().replace(',', '.'))
-        if amount <= 0:
-            raise ValueError("Количество должно быть положительным")
     except ValueError:
-        await message.answer("Пожалуйста, введите корректное числовое значение для количества продукта в граммах.")
+        await message.answer("Введите число (например: 150)")
         return
 
-    # Получаем данные из состояния
-    user_data = await state.get_data()
-    selected_food = user_data.get('selected_food')
-    meal_type = user_data.get('meal_type')
-    selected_date = user_data.get('selected_date')
-
-    if not selected_food or not meal_type or not selected_date:
-        await message.answer("Произошла ошибка. Пожалуйста, начните процесс добавления продукта заново.")
-        await state.clear()
-        return
-
-    # Рассчитываем пищевую ценность для указанного количества
-    # Получаем коэффициент пересчета (введенное количество / стандартное количество)
-    serving_weight = selected_food.get('serving_weight_grams', 100)
-    ratio = amount / serving_weight
-
-    calories = selected_food['calories'] * ratio
-    protein = selected_food['protein'] * ratio
-    fat = selected_food['fat'] * ratio
-    carbs = selected_food['carbs'] * ratio
-
-    # Сохраняем рассчитанные значения
-    await state.update_data(
-        amount=amount,
-        calories=calories,
-        protein=protein,
-        fat=fat,
-        carbs=carbs
-    )
-
-    # Показываем информацию для подтверждения
-    await message.answer(
-        f"<b>Подтвердите добавление:</b>\n\n"
-        f"Продукт: {selected_food['food_name']}\n"
-        f"Количество: {amount} г\n"
-        f"Прием пищи: {meal_type}\n"
-        f"Дата: {format_date(selected_date)}\n\n"
-        f"Пищевая ценность:\n"
-        f"• Калории: {calories:.0f} ккал\n"
-        f"• Белки: {protein:.1f} г\n"
-        f"• Жиры: {fat:.1f} г\n"
-        f"• Углеводы: {carbs:.1f} г\n\n"
-        f"Всё верно?",
-        parse_mode="HTML",
-        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
-            [
-                types.InlineKeyboardButton(text="✅ Да", callback_data="confirm_food"),
-                types.InlineKeyboardButton(text="❌ Нет", callback_data="cancel_food")
-            ]
-        ])
-    )
-
-    # Устанавливаем состояние подтверждения
-    await state.set_state(DiaryStates.confirming_entry)
+    await state.clear()
 
 
 async def confirm_food_entry(callback_query: CallbackQuery, state: FSMContext):
@@ -639,3 +566,49 @@ async def handle_food_selection(callback_query: types.CallbackQuery, state: FSMC
 async def return_to_meal_selection(callback_query: CallbackQuery, state: FSMContext):
     """Возвращает к выбору приема пищи."""
     await start_food_entry(callback_query, state)
+
+
+async def add_product_handler(callback_query: CallbackQuery, state: FSMContext):
+    """Добавляет продукт со стандартным весом (100г)"""
+    index = int(callback_query.data.split(":")[1])
+    user_data = await state.get_data()
+    product = user_data['search_results'][index]
+
+    # Добавляем в базу (пример для 100г)
+    success = add_food_entry(
+        user_id=callback_query.from_user.id,
+        date=datetime.now().strftime("%Y-%m-%d"),
+        meal_type=user_data['meal_type'],
+        food_name=product['food_name'],
+        calories=product['calories'],
+        protein=product['protein'],
+        fat=product['fat'],
+        carbs=product['carbs']
+    )
+
+    if success:
+        await callback_query.answer("✅ Продукт добавлен!")
+    else:
+        await callback_query.answer("❌ Ошибка добавления")
+
+
+async def enter_weight_handler(callback_query: CallbackQuery, state: FSMContext):
+    """Запрашивает вес продукта"""
+    index = int(callback_query.data.split(":")[1])
+    await state.update_data(selected_product_index=index)
+
+    await callback_query.message.answer(
+        "Введите вес продукта в граммах:",
+        reply_markup=types.ReplyKeyboardRemove()
+    )
+    await state.set_state(DiaryStates.entering_amount)
+    await callback_query.answer()
+
+
+async def back_to_list_handler(callback_query: CallbackQuery, state: FSMContext):
+    """Обработчик кнопки 'Назад'"""
+    await callback_query.message.delete()
+    await process_food_entry(callback_query.message, state)
+
+
+

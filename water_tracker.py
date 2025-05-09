@@ -1,5 +1,7 @@
 from aiogram import types, F
 from aiogram.fsm.context import FSMContext
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
+
 from aiogram.fsm.state import State, StatesGroup
 from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
@@ -8,7 +10,6 @@ import logging
 import os
 
 from database import get_user, get_daily_water, add_water_entry, get_water_goal, set_water_goal, get_weekly_water
-from keyboards import create_water_keyboard
 from diary import WaterStates
 
 # Настройка логирования
@@ -54,30 +55,70 @@ async def water_tracker(message: types.Message, state: FSMContext):
 
     await message.answer(message_text, reply_markup=keyboard, parse_mode="HTML")
 
+def create_water_keyboard():
+    buttons = [
+        [
+            InlineKeyboardButton(text="+200 мл", callback_data="water_add:200"),
+            InlineKeyboardButton(text="+300 мл", callback_data="water_add:300"),
+            InlineKeyboardButton(text="+500 мл", callback_data="water_add:500")
+        ],
+        [
+            InlineKeyboardButton(text="Свое количество", callback_data="water_custom"),
+            InlineKeyboardButton(text="Изменить цель", callback_data="water_goal")
+        ],
+        [
+            InlineKeyboardButton(text="Статистика", callback_data="water_stats"),
+            InlineKeyboardButton(text="Главное меню", callback_data="main_menu")
+        ]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
 
 async def add_water_amount(callback_query: types.CallbackQuery, state: FSMContext):
     """Добавляет указанное количество воды."""
-    await callback_query.answer()
-
-    # Получаем количество воды из callback_data
-    data = callback_query.data.split(":")
-    if len(data) < 2:
-        return
-
     try:
-        amount = int(data[1])
-    except ValueError:
-        await callback_query.message.answer("Некорректное количество воды.")
-        return
+        # Логируем нажатие кнопки
+        logger.info(f"User {callback_query.from_user.id} pressed water_add: {callback_query.data}")
+        logger.info(f"Получен callback: {callback_query.data}")
 
-    # Добавляем запись в БД
-    user_id = callback_query.from_user.id
-    add_water_entry(user_id, amount)
+        # Получаем количество воды из callback_data
+        amount = int(callback_query.data.split(":")[1])
 
-    # Показываем обновленный трекер
-    await callback_query.message.answer(f"✅ Добавлено {amount} мл воды!")
-    await water_tracker(callback_query.message, state)
+        # Добавляем запись в БД
+        user_id = callback_query.from_user.id
+        add_water_entry(user_id, amount)
 
+        # Обновляем исходное сообщение
+        await update_water_tracker_message(callback_query.message, user_id)
+        await callback_query.answer(f"✅ Добавлено {amount} мл воды!")
+
+    except Exception as e:
+        logger.error(f"Ошибка в add_water_amount: {e}")
+        await callback_query.answer("❌ Ошибка добавления воды")
+
+async def update_water_tracker_message(message: types.Message, user_id: int):
+    """Обновляет сообщение с трекером воды."""
+    today = datetime.now().strftime("%Y-%m-%d")
+    daily_water = get_daily_water(user_id, today)
+    water_goal = get_water_goal(user_id)
+    percentage = min(daily_water / water_goal * 100 if water_goal > 0 else 0, 100)
+    progress_bar = "▰" * int(percentage / 10) + "▱" * (10 - int(percentage / 10))
+
+    # Формируем текст
+    message_text = (
+        f"<b>💧 Водный баланс на сегодня</b>\n\n"
+        f"📏 <b>Прогресс:</b> {progress_bar} ({percentage:.0f}%)\n\n"
+        f"🥛 <b>Выпито:</b> {daily_water} мл\n"
+        f"🎯 <b>Цель:</b> {water_goal} мл\n"
+        f"🔆 <b>Осталось:</b> {max(0, water_goal - daily_water)} мл"
+    )
+
+    # Обновляем сообщение
+    await message.edit_text(
+        message_text,
+        reply_markup=create_water_keyboard(),
+        parse_mode="HTML"
+    )
 
 async def custom_water_amount(callback_query: types.CallbackQuery, state: FSMContext):
     """Запрашивает у пользователя произвольное количество воды."""
@@ -137,7 +178,7 @@ async def set_water_goal_handler(callback_query: types.CallbackQuery, state: FSM
             types.InlineKeyboardButton(text="3500 мл", callback_data="water_goal_set:3500"),
             types.InlineKeyboardButton(text="4000 мл", callback_data="water_goal_set:4000")
         ],
-        [types.InlineKeyboardButton(text="◀️ Назад", callback_data="water_back")]
+        [types.InlineKeyboardButton(text="◀️ Назад", callback_data="water_tracker")]
     ]
     markup = types.InlineKeyboardMarkup(inline_keyboard=keyboard)
 
@@ -232,7 +273,7 @@ async def show_water_statistics(callback_query: types.CallbackQuery, state: FSMC
 
     # Создаем клавиатуру для возврата
     keyboard = [
-        [types.InlineKeyboardButton(text="◀️ Назад к трекеру воды", callback_data="water_back")]
+        [types.InlineKeyboardButton(text="◀️ Назад к трекеру воды", callback_data="water_tracker")]
     ]
     markup = types.InlineKeyboardMarkup(inline_keyboard=keyboard)
 
@@ -240,8 +281,21 @@ async def show_water_statistics(callback_query: types.CallbackQuery, state: FSMC
 
 
 async def return_to_main_menu(callback_query: types.CallbackQuery, state: FSMContext):
-    """Возвращает пользователя в главное меню."""
-    await callback_query.answer()
+    """Возвращает пользователя в трекер воды."""
+    from handlers import after_calories_keyboard
 
-    # Показываем трекер воды снова
-    await water_tracker(callback_query.message, state)
+    user_id = callback_query.from_user.id
+    user = get_user(user_id)  # Проверяем, есть ли пользователь в БД
+
+    logger.info(f"Пользователь {user_id} существует: {user is not None}")
+
+    if not user:
+        await callback_query.answer("❌ Пользователь не найден. Нажмите /start")
+        return
+
+    # Если пользователь есть, показываем трекер воды
+    await callback_query.message.answer(
+        "Вы вернулись в главное меню",
+        reply_markup=after_calories_keyboard
+    )
+    await callback_query.answer()

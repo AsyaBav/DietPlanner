@@ -106,57 +106,26 @@ def create_food_entry_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
-def create_water_keyboard():
+'''def create_water_keyboard():
     """Создает клавиатуру для трекера воды."""
-    keyboard = []
-
-    # Кнопки с фиксированными значениями
-    row = []
-    for amount in WATER_INCREMENTS:
-        row.append(InlineKeyboardButton(text=f"+{amount} мл", callback_data=f"water_add:{amount}"))
-
-    keyboard.append(row)
-
-    # Кнопки настройки и статистики
-    keyboard.append([
-        InlineKeyboardButton(text="🔧 Своё количество", callback_data="water_custom"),
-        InlineKeyboardButton(text="⚙️ Изменить цель", callback_data="water_goal")
-    ])
-
-    # Кнопки статистики и возврата
-    keyboard.append([
-        InlineKeyboardButton(text="📊 Статистика", callback_data="water_stats"),
-        InlineKeyboardButton(text="◀️ Главное меню", callback_data="water_back")
-    ])
-
-    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+    keyboard = [
+        [
+            InlineKeyboardButton(text="+200 мл", callback_data="water_add:200"),
+            InlineKeyboardButton(text="+300 мл", callback_data="water_add:300"),
+            InlineKeyboardButton(text="+500 мл", callback_data="water_add:500")
+        ],
+        [
+            InlineKeyboardButton(text="🔧 Свое количество", callback_data="water_custom"),
+            InlineKeyboardButton(text="⚙️ Изменить цель", callback_data="water_goal")
+        ],
+        [
+            InlineKeyboardButton(text="📊 Статистика", callback_data="water_stats"),
+            InlineKeyboardButton(text="◀️ Главное меню", callback_data="water_back")
+        ]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)'''
 
 
-def create_recent_foods_keyboard(recent_foods):
-    """Создает клавиатуру для выбора из недавно использованных продуктов."""
-    keyboard = []
-
-    # Создаем кнопки для каждого продукта
-    for food in recent_foods:
-        food_name = food['food_name']
-        # Ограничиваем длину названия
-        if len(food_name) > 25:
-            food_name = food_name[:22] + "..."
-
-        keyboard.append([
-            InlineKeyboardButton(
-                text=f"{food_name} ({food['calories']:.0f} ккал)",
-                callback_data=f"recent_food:{food['id']}"
-            )
-        ])
-
-    # Добавляем кнопку для ввода нового продукта и отмены
-    keyboard.append([
-        InlineKeyboardButton(text="✏️ Ввести другой продукт", callback_data="add_food"),
-        InlineKeyboardButton(text="◀️ Назад", callback_data="return_to_diary")
-    ])
-
-    return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
 def create_diary_keyboard():
@@ -235,3 +204,34 @@ def create_meal_plan_keyboard():
         [InlineKeyboardButton(text="◀️ Главное меню", callback_data="plan:back")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def create_recent_foods_keyboard(recent_foods):
+    """Создает клавиатуру для выбора недавно добавленных продуктов."""
+    keyboard = []
+
+    for food in recent_foods:
+        food_name = food['food_name']
+        if len(food_name) > 25:
+            food_name = food_name[:22] + "..."
+
+        keyboard.append([
+            InlineKeyboardButton(
+                text=f"{food_name} ({food['calories']} ккал)",
+                callback_data=f"recent_food:{food['id']}"
+            )
+        ])
+
+    keyboard.append([
+        InlineKeyboardButton(
+            text="✏️ Ввести другой продукт",
+            callback_data="add_food"
+        ),
+        InlineKeyboardButton(
+            text="◀️ Назад",
+            callback_data="return_to_diary"
+        )
+    ])
+
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+

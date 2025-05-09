@@ -7,80 +7,19 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery
 from datetime import datetime
-
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
+from aiogram import Router
+from aiogram.types import Message
+from typing import Union
 from database import (
     save_recipe, get_saved_recipes, get_recipe_details, toggle_favorite_recipe,
-    delete_recipe, add_food_entry, get_user
+    delete_recipe, add_food_entry, get_user, get_db_connection, search_recipes
 )
 from keyboards import create_recipes_keyboard, create_recipe_confirmation_keyboard
 from food_api import search_food, get_food_nutrients, get_branded_food_info
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# Базовые шаблоны рецептов для разных целей
-BASE_RECIPES = {
-    "🔻 Похудение": [
-        {
-            "name": "Салат с куриной грудкой",
-            "ingredients": "Куриная грудка - 150 г\nЛистья салата - 80 г\nОгурец - 1 шт\nПомидор - 1 шт\nОливковое масло - 1 ч.л.\nЛимонный сок - 1 ст.л.\nСоль, перец - по вкусу",
-            "instructions": "1. Куриную грудку отварить и нарезать кубиками\n2. Овощи нарезать и смешать с курицей\n3. Заправить оливковым маслом и лимонным соком\n4. Посолить, поперчить по вкусу",
-            "calories": 220,
-            "protein": 30,
-            "fat": 8,
-            "carbs": 10
-        },
-        {
-            "name": "Овощной омлет",
-            "ingredients": "Яйца - 3 шт\nМолоко 1% - 30 мл\nШпинат - 50 г\nПомидор - 1 шт\nСладкий перец - 1/2 шт\nСоль, перец - по вкусу",
-            "instructions": "1. Яйца взбить с молоком, посолить и поперчить\n2. Овощи мелко нарезать\n3. Смешать овощи с яичной смесью\n4. Вылить на разогретую сковороду\n5. Готовить под крышкой на среднем огне 5-7 минут",
-            "calories": 250,
-            "protein": 20,
-            "fat": 15,
-            "carbs": 8
-        }
-    ],
-    "🔺 Набор веса": [
-        {
-            "name": "Протеиновый коктейль с бананом",
-            "ingredients": "Молоко 3.2% - 250 мл\nПротеин - 30 г (1 мерная ложка)\nБанан - 1 шт\nМед - 1 ст.л.\nОвсяные хлопья - 30 г",
-            "instructions": "1. Добавить все ингредиенты в блендер\n2. Взбить до однородной массы\n3. Подавать охлажденным",
-            "calories": 450,
-            "protein": 35,
-            "fat": 10,
-            "carbs": 55
-        },
-        {
-            "name": "Паста с куриным филе",
-            "ingredients": "Макароны - 100 г\nКуриное филе - 200 г\nСливки 20% - 100 мл\nСыр пармезан - 30 г\nЧеснок - 2 зубчика\nОливковое масло - 2 ст.л.\nСоль, перец, специи - по вкусу",
-            "instructions": "1. Макароны отварить согласно инструкции\n2. Куриное филе нарезать, обжарить на оливковом масле\n3. Добавить измельченный чеснок и сливки\n4. Тушить 5-7 минут\n5. Добавить макароны, перемешать\n6. Посыпать тертым сыром",
-            "calories": 650,
-            "protein": 50,
-            "fat": 25,
-            "carbs": 60
-        }
-    ],
-    "🔄 Поддержание текущего веса": [
-        {
-            "name": "Киноа с овощами",
-            "ingredients": "Киноа - 70 г\nБрокколи - 100 г\nМорковь - 1 шт\nСладкий перец - 1 шт\nОливковое масло - 1 ст.л.\nЛимонный сок - 1 ч.л.\nСоль, перец, зелень - по вкусу",
-            "instructions": "1. Киноа промыть и отварить\n2. Овощи нарезать и обжарить на оливковом масле\n3. Смешать киноа с овощами\n4. Добавить лимонный сок, соль, перец и зелень",
-            "calories": 350,
-            "protein": 12,
-            "fat": 10,
-            "carbs": 55
-        },
-        {
-            "name": "Творожная запеканка",
-            "ingredients": "Творог 5% - 250 г\nЯйца - 2 шт\nМед - 2 ст.л.\nВанилин - на кончике ножа\nЯблоко - 1 шт\nОвсяные хлопья - 30 г",
-            "instructions": "1. Творог смешать с яйцами и медом\n2. Яблоко натереть на терке\n3. Добавить яблоко, овсяные хлопья и ванилин к творожной массе\n4. Выложить в форму и выпекать при 180°C 30-35 минут",
-            "calories": 400,
-            "protein": 30,
-            "fat": 15,
-            "carbs": 35
-        }
-    ]
-}
 
 
 # Состояния для создания и выбора рецептов
@@ -89,6 +28,7 @@ class RecipeStates(StatesGroup):
     entering_name = State()
     entering_ingredients = State()
     entering_instructions = State()
+    entering_photo = State()
     entering_calories = State()
     entering_protein = State()
     entering_fat = State()
@@ -96,6 +36,10 @@ class RecipeStates(StatesGroup):
     confirming = State()
     generating = State()
     searching = State()
+
+    waiting_for_name = State()
+    waiting_for_ingredients = State()
+    waiting_for_instructions = State()
 
 
 async def show_recipes_menu(message: types.Message, state: FSMContext):
@@ -112,16 +56,374 @@ async def handle_recipes_callback(callback_query: CallbackQuery, state: FSMConte
     action = callback_query.data.split(':')[1]
 
     if action == "search":
-        await show_saved_recipes(callback_query, state)
+        await search_recipes(callback_query, state)
     elif action == "favorites":
-        await show_favorite_recipes(callback_query, state)
+        await show_favorites(callback_query, state)
     elif action == "create":
         await start_recipe_creation(callback_query, state)
     elif action == "generate":
-        await generate_recipe(callback_query, state)
+        await generate_recipe(callback_query)
     elif action == "back":
-        await callback_query.message.answer("Вернулись в главное меню.")
+        await return_to_main_menu(callback_query)
+    await callback_query.answer()
+
+
+'''async def search_recipes(callback_query: CallbackQuery, state: FSMContext):
+    """Запрашиваем текст для поиска"""
+    await callback_query.message.edit_text(
+        "🔍 Введите название или ингредиенты для поиска:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="recipe:back")]
+        ]))
+    await state.set_state(RecipeStates.searching)
+    await callback_query.answer()'''
+
+
+async def search_recipes(callback_query: CallbackQuery, state: FSMContext):
+    """Запрашиваем текст для поиска"""
+    await callback_query.message.edit_text(
+        "🔍 Введите название или ингредиенты для поиска:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="recipe:back")]
+        ]))
+    await state.set_state(RecipeStates.searching)
+    await callback_query.answer()
+
+
+# @router.message(RecipeStates.searching)
+async def process_search_query(message: Message, state: FSMContext):
+    """Обрабатываем поисковый запрос"""
+    search_query = message.text.strip()
+    if not search_query:
+        await message.answer("Пожалуйста, введите поисковый запрос")
+        return
+
+    search_query = ' '.join(search_query.split())
+
+    user_id = message.from_user.id
+    from database import search_recipes
+    recipes = search_recipes(user_id, search_query)
+
+    if not recipes:
+        await message.answer("😕 Ничего не найдено. Попробуйте другой запрос.")
+        await state.clear()
+        return
+
+    # Сохраняем результаты поиска в состоянии
+    await state.update_data(
+        search_results=recipes,
+        current_page=0,
+        search_query=search_query
+    )
+
+    # Показываем первую страницу результатов
+    await show_search_results(message, state)
+
+
+async def show_search_results(message: Union[Message, CallbackQuery], state: FSMContext, page=0):
+    """Показываем страницу с результатами поиска"""
+    data = await state.get_data()
+    recipes = data.get('search_results', [])
+    search_query = data.get('search_query', '')
+
+    # Пагинация - разбиваем на страницы по 5 рецептов
+    page_size = 5
+    total_pages = (len(recipes) // page_size + (1 if len(recipes) % page_size else 0))
+
+    if page >= total_pages:
+        page = total_pages - 1
+
+    start_idx = page * page_size
+    page_recipes = recipes[start_idx:start_idx + page_size]
+
+    # Формируем текст сообщения
+    text = f"🔍 Результаты поиска по запросу '{search_query}':\n\n"
+    for i, recipe in enumerate(page_recipes, 1):
+        text += f"{i}. {recipe['name']} ({recipe['calories']} ккал)\n"
+
+    # Создаем клавиатуру
+    keyboard = []
+
+    # Кнопки для рецептов
+    for recipe in page_recipes:
+        keyboard.append([
+            InlineKeyboardButton(
+                text=recipe['name'],
+                callback_data=f"view_recipe:{recipe['id']}"
+            )
+        ])
+
+        # Кнопки пагинации
+    pagination_row = []
+    if total_pages > 1:
+        if page > 0:
+            pagination_row.append(
+                InlineKeyboardButton(
+                    text="⬅️ Назад",
+                    callback_data=f"search_page:{page - 1}"
+                )
+            )
+
+        pagination_row.append(
+            InlineKeyboardButton(
+                text=f"{page + 1}/{total_pages}",
+                callback_data="noop"
+            )
+        )
+
+        if page < total_pages - 1:
+            pagination_row.append(
+                InlineKeyboardButton(
+                    text="Вперед ➡️",
+                    callback_data=f"search_page:{page + 1}"
+                )
+            )
+
+        keyboard.append(pagination_row)
+
+    # Кнопка возврата
+    keyboard.append([
+        InlineKeyboardButton(
+            text="◀️ Назад к поиску",
+            callback_data="recipe:search"
+        )
+    ])
+
+    if isinstance(message, CallbackQuery):
+        await message.message.edit_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
+        )
+        await message.answer()
+    else:
+        await message.answer(
+            text,
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
+        )
+
+
+# @router.callback_query(F.data.startswith("search_page:"))
+async def handle_search_page(callback_query: CallbackQuery, state: FSMContext):
+    """Обрабатываем переключение страниц поиска"""
+    page = int(callback_query.data.split(":")[1])
+    await state.update_data(current_page=page)
+    await show_search_results(callback_query, state, page)
+
+
+async def view_recipe_card(callback_query: CallbackQuery, recipe_id: int):
+    """Показываем карточку рецепта"""
+    recipe = get_recipe_details(recipe_id)
+    if not recipe:
+        await callback_query.answer("Рецепт не найден")
+        return
+
+    # Формируем текст карточки
+    text = f"🍳 <b>{recipe['name']}</b>\n\n"
+    text += "<b>Ингредиенты:</b>\n"
+    text += recipe['ingredients'].replace(",", "\n") + "\n\n"
+    text += "<b>Способ приготовления:</b>\n"
+    text += recipe['instructions'] + "\n\n"
+    text += "<b>Пищевая ценность (на 100г):</b>\n"
+    text += f"• Калории: {recipe['calories']} ккал\n"
+    text += f"• Белки: {recipe['protein']} г\n"
+    text += f"• Жиры: {recipe['fat']} г\n"
+    text += f"• Углеводы: {recipe['carbs']} г"
+
+    # Клавиатура карточки
+    keyboard = [
+        [
+            InlineKeyboardButton(text="❤️ В избранное", callback_data=f"toggle_fav:{recipe_id}"),
+            InlineKeyboardButton(text="➕ В меню", callback_data=f"add_to_menu:{recipe_id}")
+        ],
+        [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_search")]
+    ]
+
+    # Если есть фото (добавьте поле photo_path в таблицу recipes)
+    if recipe.get('photo_path'):
+        await callback_query.message.answer_photo(
+            photo=recipe['photo_path'],
+            caption=text,
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
+        )
+    else:
+        await callback_query.message.edit_text(
+            text,
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
+        )
+
+    await callback_query.answer()
+
+
+async def show_favorites(callback_query: CallbackQuery, state: FSMContext):
+    user_id = callback_query.from_user.id
+    from database import get_saved_recipes
+    favorites = get_saved_recipes(user_id, is_favorite=True)  # Функция из database.py
+
+    '''if not favorites:
+        text = "У вас пока нет избранных рецептов."
+    else:
+        text = "⭐ Ваши избранные рецепты:\n\n"
+        for recipe in favorites:
+            text += f"- {recipe['name']} ({recipe['calories']} ккал)\n"'''
+
+    if not favorites:
+        await callback_query.message.edit_text(
+            "У вас пока нет избранных рецептов.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="◀️ Назад", callback_data="recipe:back")]
+            ]))
         await callback_query.answer()
+        return
+
+        # Сохраняем список избранного в состоянии
+    await state.update_data(favorites_list=favorites, current_fav_page=0)
+
+    # Формируем сообщение с пагинацией
+    await show_favorites_page(callback_query, state)
+
+    '''await callback_query.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="recipes:back")]
+        ])
+    )'''
+
+
+async def show_favorites_page(callback_query: CallbackQuery, state: FSMContext, page=0):
+    """Показывает страницу с избранными рецептами"""
+    data = await state.get_data()
+    favorites = data.get('favorites_list', [])
+
+    # Пагинация
+    page_size = 5
+    total_pages = (len(favorites) // page_size + (1 if len(favorites) % page_size else 0))
+    page = min(page, total_pages - 1) if total_pages > 0 else 0
+    start_idx = page * page_size
+    page_favorites = favorites[start_idx:start_idx + page_size]
+
+    text = "⭐ Ваши избранные рецепты:\n\n"
+    for i, recipe in enumerate(page_favorites, start_idx + 1):
+        text += f"{i}. {recipe['name']} ({recipe['calories']} ккал)\n"
+
+    # Клавиатура с рецептами и пагинацией
+    keyboard = []
+    for recipe in page_favorites:
+        keyboard.append([InlineKeyboardButton(
+            text=recipe['name'],
+            callback_data=f"view_fav_recipe:{recipe['id']}"
+        )])
+
+    # Пагинация
+    pagination_row = []
+    if total_pages > 1:
+        if page > 0:
+            pagination_row.append(InlineKeyboardButton(
+                text="⬅️ Назад",
+                callback_data=f"fav_page:{page - 1}"
+            ))
+
+        # Добавляем номер страницы в любом случае
+        pagination_row.append(InlineKeyboardButton(
+            text=f"{page + 1}/{total_pages}",
+            callback_data="noop"
+        ))
+
+        if page < total_pages - 1:
+            pagination_row.append(InlineKeyboardButton(
+                text="Вперед ➡️",
+                callback_data=f"fav_page:{page + 1}"
+            ))
+    if pagination_row:
+        keyboard.append(pagination_row)
+
+    # Кнопка возврата
+    keyboard.append([InlineKeyboardButton(
+        text="◀️ Назад в меню рецептов",
+        callback_data="recipe:back"
+    )])
+
+    await callback_query.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
+    await callback_query.answer()
+
+
+'''async def start_recipe_creation(callback_query: types.CallbackQuery, state: FSMContext):
+    await callback_query.message.edit_text(
+        "Введите название рецепта:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="◀️ Отмена", callback_data="recipes:back")]
+        ])
+    )
+    await state.set_state(RecipeStates.waiting_for_name)'''
+
+async def start_recipe_creation(callback_query: CallbackQuery, state: FSMContext):
+    """Начинает процесс создания рецепта."""
+    await state.clear()
+
+    await callback_query.message.answer(
+        "Давайте создадим новый рецепт! Введите название рецепта:"
+    )
+    await state.set_state(RecipeStates.entering_name)
+
+
+
+async def view_favorite_recipe(callback_query: CallbackQuery, state: FSMContext):
+    """Показывает карточку избранного рецепта"""
+    recipe_id = int(callback_query.data.split(':')[1])
+    recipe = get_recipe_details(recipe_id)
+
+    if not recipe:
+        await callback_query.answer("Рецепт не найден")
+        return
+
+    # Формируем текст карточки
+    text = f"⭐️🍳 <b>{recipe['name']}</b>\n\n"
+    text += "<b>Ингредиенты:</b>\n"
+    text += recipe['ingredients'].replace(",", "\n") + "\n\n"
+    text += "<b>Способ приготовления:</b>\n"
+    text += recipe['instructions'] + "\n\n"
+    text += "<b>Пищевая ценность:</b>\n"
+    text += f"• Калории: {recipe['calories']} ккал\n"
+    text += f"• Белки: {recipe['protein']} г\n"
+    text += f"• Жиры: {recipe['fat']} г\n"
+    text += f"• Углеводы: {recipe['carbs']} г"
+
+    # Клавиатура карточки
+    keyboard = [
+        [
+            InlineKeyboardButton(text="💔 Удалить из избранного", callback_data=f"toggle_fav:{recipe_id}"),
+            InlineKeyboardButton(text="➕ В меню", callback_data=f"add_to_menu:{recipe_id}")
+        ],
+        [InlineKeyboardButton(text="◀️ Назад к избранному", callback_data="back_to_favorites")]
+    ]
+
+    await callback_query.message.edit_text(
+        text,
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
+    await callback_query.answer()
+
+
+async def generate_recipe(callback_query: types.CallbackQuery):
+    # Здесь будет код генерации рецепта
+    await callback_query.message.edit_text(
+        "🎲 Генерация рецепта...",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="recipes:back")]
+        ])
+    )
+
+
+async def return_to_main_menu(callback_query: types.CallbackQuery):
+    from handlers import after_calories_keyboard
+    await callback_query.message.delete()
+    await callback_query.message.answer(
+        "Вы вернулись в главное меню",
+        reply_markup=after_calories_keyboard
+    )
 
 
 async def show_saved_recipes(callback_query: CallbackQuery, state: FSMContext):
@@ -204,37 +506,89 @@ async def show_favorite_recipes(callback_query: CallbackQuery, state: FSMContext
 
 async def view_recipe_details(callback_query: CallbackQuery, state: FSMContext):
     """Показывает детальную информацию о рецепте."""
-    recipe_id = int(callback_query.data.split(':')[1])
-    recipe = get_recipe_details(recipe_id)
+    try:
+        recipe_id = int(callback_query.data.split(':')[1])
+        from database import get_recipe_details  # Добавляем импорт
+        recipe = get_recipe_details(recipe_id)
 
-    if not recipe:
-        await callback_query.message.answer("Рецепт не найден.")
+        if not recipe:
+            await callback_query.answer("Рецепт не найден")
+            return
+
+        # Формируем текст карточки
+        text = f"🍳 <b>{recipe['name']}</b>\n\n"
+        text += "<b>Ингредиенты:</b>\n"
+        text += recipe['ingredients'].replace(",", "\n") + "\n\n"
+        text += "<b>Способ приготовления:</b>\n"
+        text += recipe['instructions'] + "\n\n"
+        text += "<b>Пищевая ценность:</b>\n"
+        text += f"• Калории: {recipe['calories']} ккал\n"
+        text += f"• Белки: {recipe['protein']} г\n"
+        text += f"• Жиры: {recipe['fat']} г\n"
+        text += f"• Углеводы: {recipe['carbs']} г"
+
+        # Клавиатура карточки
+        keyboard = [
+            [
+                InlineKeyboardButton(text="❤️ В избранное", callback_data=f"toggle_fav:{recipe_id}"),
+                InlineKeyboardButton(text="➕ В меню", callback_data=f"add_to_menu:{recipe_id}")
+            ],
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_search")]
+        ]
+
+        # Удаляем предыдущее сообщение с результатами поиска
+        await callback_query.message.delete()
+
+        # Отправляем новое сообщение с карточкой рецепта
+        await callback_query.message.answer(
+            text,
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
+        )
         await callback_query.answer()
+    except Exception as e:
+        logger.error(f"Ошибка при отображении рецепта: {e}")
+        await callback_query.answer("Произошла ошибка при загрузке рецепта")
+
+
+async def toggle_favorite_handler(callback_query: CallbackQuery, state: FSMContext):
+    """Обрабатывает добавление/удаление из избранного"""
+    recipe_id = int(callback_query.data.split(':')[1])
+    from database import toggle_favorite_recipe
+
+    new_status = toggle_favorite_recipe(recipe_id)
+    status_text = "добавлен в избранное" if new_status else "удален из избранного"
+
+    await callback_query.answer(f"Рецепт {status_text}!")
+    # Обновляем сообщение с рецептом
+    await view_recipe_details(callback_query, callback_query.message.bot.current_state(callback_query.from_user.id))
+    await view_recipe_details(callback_query, state)
+
+
+async def add_to_menu_handler(callback_query: CallbackQuery, state: FSMContext):
+    """Обрабатывает добавление рецепта в меню на сегодня"""
+    recipe_id = int(callback_query.data.split(':')[1])
+    from database import get_recipe_details, add_food_entry
+
+    recipe = get_recipe_details(recipe_id)
+    if not recipe:
+        await callback_query.answer("Рецепт не найден")
         return
 
-    await state.update_data(current_recipe_id=recipe_id)
-
-    # Формируем текст рецепта
-    text = f"🍳 <b>{recipe['name']}</b>\n\n"
-    text += "<b>Ингредиенты:</b>\n"
-    text += f"{recipe['ingredients']}\n\n"
-    text += "<b>Способ приготовления:</b>\n"
-    text += f"{recipe['instructions']}\n\n"
-    text += "<b>Пищевая ценность:</b>\n"
-    text += f"• Калории: {recipe['calories']} ккал\n"
-    text += f"• Белки: {recipe['protein']} г\n"
-    text += f"• Жиры: {recipe['fat']} г\n"
-    text += f"• Углеводы: {recipe['carbs']} г\n"
-
-    # Создаем клавиатуру для действий с рецептом
-    keyboard = create_recipe_confirmation_keyboard(recipe_id)
-
-    await callback_query.message.answer(
-        text=text,
-        parse_mode="HTML",
-        reply_markup=keyboard
+    # Добавляем в дневник как отдельный прием пищи "Рецепт"
+    today = datetime.now().strftime("%Y-%m-%d")
+    add_food_entry(
+        user_id=callback_query.from_user.id,
+        date=today,
+        meal_type="Рецепт",
+        food_name=recipe['name'],
+        calories=recipe['calories'],
+        protein=recipe['protein'],
+        fat=recipe['fat'],
+        carbs=recipe['carbs']
     )
-    await callback_query.answer()
+
+    await callback_query.answer(f"Рецепт '{recipe['name']}' добавлен в сегодняшнее меню!")
 
 
 async def toggle_recipe_favorite_status(callback_query: CallbackQuery, state: FSMContext):
@@ -289,7 +643,7 @@ async def process_recipe_name(message: types.Message, state: FSMContext):
     await state.update_data(name=name)
 
     await message.answer(
-        "Отлично! Теперь введите список ингредиентов (каждый ингредиент с новой строки):"
+        "Отлично! Теперь введите список ингредиентов с граммовками:"
     )
 
     await state.set_state(RecipeStates.entering_ingredients)
@@ -314,19 +668,30 @@ async def process_recipe_ingredients(message: types.Message, state: FSMContext):
 
 async def process_recipe_instructions(message: types.Message, state: FSMContext):
     """Обрабатывает ввод инструкций рецепта."""
-    instructions = message.text.strip()
+    await state.update_data(instructions=message.text)
+    data = await state.get_data()
 
-    if not instructions:
-        await message.answer("Пожалуйста, введите инструкции по приготовлению.")
-        return
+    from database import save_recipe
 
-    await state.update_data(instructions=instructions)
-
-    await message.answer(
-        "Отлично! Теперь введите калорийность блюда (ккал):"
+    # Сохраняем рецепт в базу данных
+    recipe_id = save_recipe(
+        user_id=message.from_user.id,
+        name=data['name'],
+        ingredients=data['ingredients'],
+        instructions=message.text,
+        calories=0,  # Можно указать 0 или запросить у пользователя
+        protein=0,
+        fat=0,
+        carbs=0
     )
 
-    await state.set_state(RecipeStates.entering_calories)
+    if recipe_id:
+        await message.answer("✅ Рецепт успешно сохранен!")
+    else:
+        await message.answer("❌ Ошибка при сохранении рецепта")
+
+    await state.clear()
+    await show_recipes_menu(message)
 
 
 async def process_recipe_calories(message: types.Message, state: FSMContext):
@@ -480,7 +845,7 @@ async def generate_recipe(callback_query: CallbackQuery, state: FSMContext):
 
     goal = user['goal']
 
-    # Выбираем случайный рецепт из базовых шаблонов в соответствии с целью
+    '''# Выбираем случайный рецепт из базовых шаблонов в соответствии с целью
     base_recipes = BASE_RECIPES.get(goal)
 
     if not base_recipes:
@@ -525,7 +890,7 @@ async def generate_recipe(callback_query: CallbackQuery, state: FSMContext):
     )
 
     await state.set_state(RecipeStates.confirming)
-    await callback_query.answer()
+    await callback_query.answer()'''
 
 
 async def recipe_to_diary(callback_query: CallbackQuery, state: FSMContext):

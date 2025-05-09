@@ -84,6 +84,7 @@ def init_db():
             protein REAL,
             fat REAL,
             carbs REAL,
+            photo_path TEXT,
             is_favorite BOOLEAN DEFAULT 0,
             creation_date TEXT DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users (id)
@@ -644,6 +645,40 @@ def check_db_structure():
         cursor = conn.execute("PRAGMA table_info(users)")
         columns = [row[1] for row in cursor.fetchall()]
         logger.info(f"Структура таблицы users: {columns}")
+    finally:
+        conn.close()
+
+
+def search_recipes(user_id, search_query, limit=10, offset=0):
+    """Поиск рецептов по названию и ингредиентам"""
+    conn = get_db_connection()
+    try:
+        # Разбиваем поисковый запрос на отдельные слова
+        search_terms = search_query.lower().split()
+
+        # Создаем условия для каждого слова
+        conditions = []
+        params = [user_id]
+
+        for term in search_terms:
+            conditions.append("(LOWER(name) LIKE ? OR LOWER(ingredients) LIKE ?)")
+            params.extend([f"%{term}%", f"%{term}%"])
+
+        where_clause = " OR ".join(conditions)
+
+        query = f"""
+        SELECT * FROM recipes 
+        WHERE user_id = ? AND ({where_clause})
+        LIMIT ? OFFSET ?
+        """
+
+        params.extend([limit, offset])
+
+        recipes = conn.execute(query, params).fetchall()
+        return [dict(recipe) for recipe in recipes]
+    except Exception as e:
+        logger.error(f"Ошибка при поиске рецептов: {e}")
+        return []
     finally:
         conn.close()
 

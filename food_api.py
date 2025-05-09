@@ -1,10 +1,50 @@
+"""
+Модуль food_api.py предоставляет интерфейс для работы с API сервиса Nutritionix,
+а также переводит пользовательские запросы между русским и английским языками.
+
+Функциональность:
+
+1. Перевод текста:
+   - Автоматический перевод пользовательского ввода на английский язык для взаимодействия с API.
+   - Перевод названий продуктов обратно на русский язык для вывода пользователю.
+
+2. Запросы к Nutritionix API:
+   - Универсальная функция make_request для отправки GET и POST-запросов.
+   - Поддержка авторизации через заголовки с API-ключами.
+
+3. Основные функции:
+   - search_food(query): поиск продуктов по названию (обычные и брендированные).
+   - get_food_nutrients(food_name): получение информации о пищевой ценности обычного продукта.
+   - get_branded_food_info(nix_item_id): получение информации о брендированном продукте по его ID.
+   - get_nutrients_from_text(text): анализ текстового описания еды и вычисление общей питательной ценности.
+
+Модуль включает логирование действий и обработку ошибок при переводе и сетевых запросах.
+"""
+
+
 import requests
 import logging
 from config import NUTRITIONIX_APP_ID, NUTRITIONIX_API_KEY
+from deep_translator import GoogleTranslator
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+def translate_to_english(text: str) -> str:
+    try:
+        return GoogleTranslator(source='auto', target='en').translate(text)
+    except Exception as e:
+        logger.error(f"Ошибка при переводе запроса: {e}")
+        return text  # Если ошибка — вернуть оригинал
+
+def translate_to_russian(text: str) -> str:
+    try:
+        return GoogleTranslator(source='en', target='ru').translate(text)
+    except Exception as e:
+        logger.error(f"Ошибка при переводе на русский: {e}")
+        return text
+
 
 # Базовый URL для Nutritionix API
 BASE_URL = 'https://trackapi.nutritionix.com/v2'
@@ -46,11 +86,9 @@ def make_request(method, endpoint, **kwargs):
 def search_food(query, limit=5):
     """
     Поиск продуктов по запросу пользователя.
-
     Args:
         query (str): Строка поиска
         limit (int): Максимальное количество результатов
-
     Returns:
         list: Список найденных продуктов
     """
@@ -58,8 +96,10 @@ def search_food(query, limit=5):
         return []
 
     logger.info(f"Поиск продуктов по запросу: {query}")
+    translated_query = translate_to_english(query)
+    logger.info(f"Переведённый запрос: {translated_query}")
 
-    data = make_request('GET', '/search/instant', params={'query': query})
+    data = make_request('GET', '/search/instant', params={'query': translated_query})
 
     if not data:
         return []
@@ -69,8 +109,9 @@ def search_food(query, limit=5):
     results = []
 
     for food in common_foods:
+        food_name = food.get('food_name', '')
         results.append({
-            'food_name': food.get('food_name', ''),
+            'food_name': translate_to_russian(food_name),
             'serving_unit': food.get('serving_unit', 'г'),
             'serving_qty': food.get('serving_qty', 100),
             'photo': food.get('photo', {}).get('thumb', ''),
@@ -79,8 +120,10 @@ def search_food(query, limit=5):
         })
 
     for food in branded_foods:
+        food_name = food.get('food_name', '')
+
         results.append({
-            'food_name': food.get('food_name', ''),
+            'food_name': translate_to_russian(food_name),
             'brand_name': food.get('brand_name', ''),
             'serving_unit': food.get('serving_unit', 'г'),
             'serving_qty': food.get('serving_qty', 100),
@@ -158,16 +201,13 @@ def get_branded_food_info(nix_item_id):
 def get_nutrients_from_text(text):
     """
     Извлекает информацию о питательной ценности из текстового описания.
-
-    Args:
-        text (str): Описание продуктов (например, "100г курицы и 200г риса")
-
-    Returns:
-        dict: Суммарная информация о пищевой ценности
     """
     logger.info(f"Анализ текста для расчета питательности: {text}")
 
-    data = make_request('POST', '/natural/nutrients', json={'query': text})
+    translated_text = translate_to_english(text)
+    logger.info(f"Переведённый текст: {translated_text}")
+
+    data = make_request('POST', '/natural/nutrients', json={'query': translated_text})
 
     if not data or 'foods' not in data or len(data['foods']) == 0:
         return None
@@ -176,7 +216,9 @@ def get_nutrients_from_text(text):
     total_protein = sum(food.get('nf_protein', 0) for food in data['foods'])
     total_fat = sum(food.get('nf_total_fat', 0) for food in data['foods'])
     total_carbs = sum(food.get('nf_total_carbohydrate', 0) for food in data['foods'])
-    food_names = [food.get('food_name', '') for food in data['foods']]
+
+    # Переводим названия продуктов на русский
+    food_names = [translate_to_russian(food.get('food_name', '')) for food in data['foods']]
     full_name = ", ".join(food_names)
 
     return {

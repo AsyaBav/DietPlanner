@@ -14,6 +14,8 @@ from database import close_db
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+logging.basicConfig(level=logging.DEBUG)
+
 # Создаем бота и диспетчер
 bot = None
 dp = None
