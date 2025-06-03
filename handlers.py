@@ -212,12 +212,13 @@ def register_handlers(dp):
     # Обработчики для рациона - дополнительные
     router.callback_query.register(handle_replace_dish, F.data.startswith("replace_dish:"))
     router.callback_query.register(confirm_replace_dish, F.data.startswith("confirm_replace:"))
-    router.callback_query.register(transfer_plan_to_diary, F.data.startswith("save_plan_to_diary:"))
     
     # Импортируем новые функции
-    from meal_planner import save_whole_plan_to_diary, show_plan_for_date
+    from meal_planner import save_whole_plan_to_diary, show_plan_for_date, handle_save_plan_to_diary
     router.callback_query.register(save_whole_plan_to_diary, F.data.startswith("save_plan_to_diary:"))
+    router.callback_query.register(handle_save_plan_to_diary, F.data.startswith("save_plan_to_diary:"))
     router.callback_query.register(show_plan_for_date, F.data.startswith("show_plan:"))
+    router.callback_query.register(transfer_plan_to_diary, F.data == "plan:to_diary")
 
     router.callback_query.register(toggle_recipe_favorite_status, F.data.startswith("toggle_favorite:"))
     router.callback_query.register(delete_recipe_handler, F.data.startswith("delete_recipe:"))
