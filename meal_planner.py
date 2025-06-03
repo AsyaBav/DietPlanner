@@ -120,7 +120,7 @@ async def show_daily_plan(message: types.Message, state: FSMContext, selected_da
         ],
         [
             types.InlineKeyboardButton(text="➕ Добавить блюдо", callback_data="plan:add"),
-            types.InlineKeyboardButton(text="🔄 Сгенерировать", callback_data="plan:generate")
+            types.InlineKeyboardButton(text="🔄 Все рецепты", callback_data="plan:generate")
         ]
     ]
 

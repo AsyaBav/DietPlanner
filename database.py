@@ -72,24 +72,24 @@ def init_db():
         )
         ''')
 
-        # Таблица для хранения рецептов
+        # Таблица рецептов
         conn.execute('''
-        CREATE TABLE IF NOT EXISTS recipes (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER,
-            name TEXT,
-            ingredients TEXT,
-            instructions TEXT,
-            calories REAL,
-            protein REAL,
-            fat REAL,
-            carbs REAL,
-            photo_path TEXT,
-            is_favorite BOOLEAN DEFAULT 0,
-            creation_date TEXT DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users (id)
-        )
-        ''')
+                CREATE TABLE IF NOT EXISTS recipes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER,
+                    name TEXT,
+                    ingredients TEXT,
+                    instructions TEXT,
+                    calories REAL,
+                    protein REAL,
+                    fat REAL,
+                    carbs REAL,
+                    photo_path TEXT,
+                    creation_date TEXT DEFAULT CURRENT_TIMESTAMP,
+                    is_favorite BOOLEAN DEFAULT 0,
+                    FOREIGN KEY (user_id) REFERENCES users (id)
+                )
+                ''')
 
         # Таблица для плана питания
         conn.execute('''
@@ -104,6 +104,16 @@ def init_db():
         )
         ''')
 
+        # строки для создания индексов
+        conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_recipes_user_name 
+                ON recipes(user_id, name COLLATE NOCASE)
+                """)
+
+        conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_recipes_user_ingredients 
+                ON recipes(user_id, ingredients COLLATE NOCASE)
+                """)
 
         # Создаем индексы для оптимизации запросов
         conn.execute('CREATE INDEX IF NOT EXISTS idx_food_entries_user_date ON food_entries (user_id, date)')
@@ -115,6 +125,13 @@ def init_db():
         columns = [row[1] for row in cursor.fetchall()]  # Теперь правильно
         logger.info(f"Структура таблицы users: {columns}")
 
+        cursor = conn.execute("PRAGMA table_info(recipes)")
+        columns = [row[1] for row in cursor.fetchall()]
+
+        if "photo_path" not in columns:
+            conn.execute("ALTER TABLE recipes ADD COLUMN photo_path TEXT")
+            conn.commit()
+            logger.info("Столбец photo_path успешно добавлен в таблицу recipes.")
 
         conn.commit()
         logger.info("База данных успешно инициализирована")
@@ -132,6 +149,42 @@ else:
     init_db()
 
 
+def execute_query(query, params=(), fetch_one=False, fetch_all=False):
+    """
+    Выполняет SQL-запрос и возвращает результаты (если требуется).
+
+    Args:
+        query (str): SQL-запрос.
+        params (tuple): Параметры для подстановки.
+        fetch_one (bool): Возвращать одну строку.
+        fetch_all (bool): Возвращать все строки.
+
+    Returns:
+        list or dict or None: Результаты запроса или None при ошибке.
+    """
+    conn = get_db_connection()
+    if not conn:
+        return None
+
+    try:
+        cursor = conn.cursor()
+        cursor.execute(query, params)
+        conn.commit()
+
+        if fetch_one:
+            return cursor.fetchone()
+
+        if fetch_all:
+            return cursor.fetchall()
+
+        return None  # Если не требуется вернуть данные
+
+    except sqlite3.Error as e:
+        logger.error(f"Ошибка выполнения запроса: {e}")
+        return None
+
+    finally:
+        conn.close()
 # Функции для работы с пользователями
 
 def create_user(user_id, name=None):
@@ -172,6 +225,12 @@ def get_user(user_id):
         return None
     finally:
         conn.close()
+
+    logging.info(f"Вызов get_user с ID: {user_id}")
+    query = "SELECT * FROM users WHERE id = ?"
+    result = execute_query(query, (user_id,), fetchone=True)
+    logging.info(f"Результат get_user: {result}")
+    return result
 
 
 def update_user(user_id, **kwargs):
@@ -431,20 +490,23 @@ def get_weekly_water(user_id, end_date=None):
 
 
 # Функции для работы с рецептами
+#Сохраняет новый рецепт
 
-def save_recipe(user_id, name, ingredients, instructions, calories, protein, fat, carbs):
-    #Сохраняет новый рецепт
+def save_recipe(user_id, name, ingredients, instructions, calories, protein, fat, carbs, photo_path=None):
     conn = get_db_connection()
     try:
         conn.execute(
             '''INSERT INTO recipes 
-            (user_id, name, ingredients, instructions, calories, protein, fat, carbs) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
-            (user_id, name, ingredients, instructions, calories, protein, fat, carbs)
+            (user_id, name, ingredients, instructions, calories, protein, fat, carbs, photo_path) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+            (user_id, name, ingredients, instructions, calories, protein, fat, carbs, photo_path)
         )
         conn.commit()
+        #return True
+        recipe_id = conn.execute('SELECT last_insert_rowid()').fetchone()[0]
+
         logger.info(f"Сохранен новый рецепт {name} для пользователя {user_id}")
-        return conn.execute('SELECT last_insert_rowid()').fetchone()[0]
+        return recipe_id
     except Exception as e:
         logger.error(f"Ошибка при сохранении рецепта: {e}")
         return None
@@ -540,9 +602,8 @@ def delete_recipe(recipe_id):
 
 
 # Функции для работы с планом питания
-
+#Добавляет рецепт в план питания
 def add_to_meal_plan(user_id, recipe_id, meal_type, date):
-    #Добавляет рецепт в план питания
     conn = get_db_connection()
     try:
         conn.execute(
@@ -558,9 +619,8 @@ def add_to_meal_plan(user_id, recipe_id, meal_type, date):
     finally:
         conn.close()
 
-
+#Получает план питания на день
 def get_daily_meal_plan(user_id, date):
-    #Получает план питания на день
     conn = get_db_connection()
     try:
         result = conn.execute(
@@ -649,35 +709,32 @@ def check_db_structure():
         conn.close()
 
 
-def search_recipes(user_id, search_query, limit=10, offset=0):
+def search_recipes(user_id, search_query):
     """Поиск рецептов по названию и ингредиентам"""
     conn = get_db_connection()
     try:
-        # Разбиваем поисковый запрос на отдельные слова
-        search_terms = search_query.lower().split()
+        # Подготавливаем поисковый запрос
+        search_query = f"%{search_query.strip().lower()}%"
 
-        # Создаем условия для каждого слова
-        conditions = []
-        params = [user_id]
-
-        for term in search_terms:
-            conditions.append("(LOWER(name) LIKE ? OR LOWER(ingredients) LIKE ?)")
-            params.extend([f"%{term}%", f"%{term}%"])
-
-        where_clause = " OR ".join(conditions)
-
-        query = f"""
+        query = """
         SELECT * FROM recipes 
-        WHERE user_id = ? AND ({where_clause})
-        LIMIT ? OFFSET ?
+        WHERE user_id = ? 
+        AND (LOWER(name) LIKE ? OR LOWER(ingredients) LIKE ?)
+        ORDER BY 
+            CASE 
+                WHEN LOWER(name) LIKE ? THEN 1  
+                ELSE 2 
+            END,
+            is_favorite DESC,
+            creation_date DESC
+        LIMIT 20
         """
 
-        params.extend([limit, offset])
-
-        recipes = conn.execute(query, params).fetchall()
+        recipes = conn.execute(query, (user_id, search_query, search_query, search_query)).fetchall()
+        logger.info(f"Found {len(recipes)} recipes for query: {search_query}")
         return [dict(recipe) for recipe in recipes]
     except Exception as e:
-        logger.error(f"Ошибка при поиске рецептов: {e}")
+        logger.error(f"Ошибка при поиске рецептов: {e}", exc_info=True)
         return []
     finally:
         conn.close()

@@ -4,10 +4,11 @@ from datetime import datetime, date, timedelta
 import matplotlib.pyplot as plt
 from matplotlib.dates import DateFormatter
 import matplotlib
+from aiogram.types import Message
 
 matplotlib.use('Agg')  # Использование Agg бэкенда (не требует GUI)
 import os
-
+from database import get_user
 from aiogram import types
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -18,7 +19,7 @@ from database import (
     get_user, get_daily_totals, get_daily_water,
     get_weekly_water, get_water_goal
 )
-from utils import format_date, get_progress_percentage
+from utils import format_date
 
 
 # Локальное определение функции для избежания проблем импорта
@@ -69,14 +70,19 @@ async def show_statistics(message: types.Message, state: FSMContext):
     )
 
 
-async def handle_statistics_callback(callback_query: CallbackQuery, state: FSMContext):
+'''async def handle_statistics_callback(callback_query: CallbackQuery, state: FSMContext):
     """Обрабатывает выбор типа статистики."""
     action = callback_query.data.split(':')[1]
+    data = callback_query.data
 
     if action == "nutrition":
         await show_nutrition_statistics(callback_query, state)
     elif action == "water":
         await show_water_statistics(callback_query, state)
+    if data == "stats:water":
+        await show_water_statistics(callback_query.message)
+    elif data == "stats:nutrition":
+        await show_nutrition_statistics(callback_query.message)
     elif action == "back":
         from keyboards import after_calories_keyboard
         await callback_query.message.answer(
@@ -84,10 +90,59 @@ async def handle_statistics_callback(callback_query: CallbackQuery, state: FSMCo
             reply_markup=after_calories_keyboard
         )
 
-    await callback_query.answer()
+    await callback_query.answer()'''
+
+async def handle_statistics_callback(callback_query: CallbackQuery, state: FSMContext):
+    """Обработка нажатий кнопок статистики"""
+    data = callback_query.data
+    logger.info(f"Получен callback: {data}")
+
+    if data == "stats:water":
+        await show_water_statistics(callback_query.message, state)
+    elif data == "stats:nutrition":
+        await show_nutrition_statistics(callback_query.message, state)
+    else:
+        logger.warning(f"Неизвестная команда: {data}")
+        await callback_query.answer("Неизвестная команда.")
 
 
-async def show_nutrition_statistics(callback_query: CallbackQuery, state: FSMContext):
+async def show_nutrition_statistics(message: types.Message, state: FSMContext):
+    logging.info("Вызвана функция show_nutrition_statistics")
+    logging.info(f"User ID: {message.from_user.id}")
+    user_id = message.from_user.id
+    logging.info(f"Получение данных для пользователя {user_id}")
+
+    user = get_user(user_id)
+
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    # Получаем данные из базы
+    daily_totals = get_daily_totals(user_id, today)
+    logging.info(f"Запрос пользователя с ID: {user_id}")
+    user_data = get_user(user_id)
+    logging.info(f"Данные пользователя из базы: {user_data}")
+
+    # Проверяем, есть ли данные
+    if not daily_totals or user:
+        logging.warning(f"Пользователь {user_id} не найден")
+        await message.answer("Сегодня вы еще не добавляли продукты.")
+        return
+
+    logging.info(f"Данные пользователя: {user}")
+
+
+    # Формируем сообщение
+    text = (
+        f"📊 <b>Статистика по калориям и БЖУ за сегодня:</b>\n\n"
+        f"Калории: {daily_totals['total_calories']} / {user_data['goal_calories']} ккал\n"
+        f"Белки: {daily_totals['total_protein']} г\n"
+        f"Жиры: {daily_totals['total_fat']} г\n"
+        f"Углеводы: {daily_totals['total_carbs']} г\n"
+    )
+
+    await message.answer(text, parse_mode="HTML")
+
+'''async def show_nutrition_statistics(callback_query: CallbackQuery, state: FSMContext):
     """Показывает статистику питания за день."""
     user_id = callback_query.from_user.id
 
@@ -184,7 +239,7 @@ async def show_nutrition_statistics(callback_query: CallbackQuery, state: FSMCon
     try:
         os.remove(image_path)
     except:
-        pass
+        pass'''
 
 
 async def create_nutrition_chart(data, goal_calories, goal_protein, goal_fat, goal_carbs, user_id):
@@ -253,12 +308,17 @@ async def create_nutrition_chart(data, goal_calories, goal_protein, goal_fat, go
 
 async def show_water_statistics(callback_query: CallbackQuery, state: FSMContext):
     """Показывает статистику потребления воды за неделю."""
+    logging.info("Вызвана функция show_water_statistics")
+
     user_id = callback_query.from_user.id
+    logging.info(f"Получение данных по воде для пользователя {user_id}")
 
     # Получаем данные о пользователе
     user = get_user(user_id)
 
     if not user:
+        logging.warning(f"Пользователь {user_id} не найден")
+
         await callback_query.message.answer("Сначала нужно зарегистрироваться.")
         return
 
@@ -303,16 +363,16 @@ async def show_water_statistics(callback_query: CallbackQuery, state: FSMContext
         max_day = max(non_zero_days, key=lambda x: x['amount'])
         min_day = min(non_zero_days, key=lambda x: x['amount'])
 
-        text += f"Максимум: {max_day['amount']} мл ({format_date(max_day['date'])})\n"
-        text += f"Минимум: {min_day['amount']} мл ({format_date(min_day['date'])})\n\n"
+        text += f"Лучший день: {format_date(max_day['date'])} — {max_day['amount']} мл\n"
+        text += f"Худший день: {format_date(min_day['date'])} — {min_day['amount']} мл\n\n"
 
-    # Добавляем общие рекомендации
-    if avg_daily < water_goal * 0.8:
-        text += "⚠️ <b>Рекомендация:</b> Вы потребляете значительно меньше воды, чем рекомендуется. Увеличьте потребление для поддержания здоровья и хорошего самочувствия."
-    elif avg_daily < water_goal:
-        text += "📌 <b>Рекомендация:</b> Вы немного не дотягиваете до целевого потребления воды. Старайтесь выпивать больше воды в течение дня."
+    # Общая оценка
+    if avg_daily >= water_goal:
+        text += "🎉 Отлично! Вы достигаете своей цели по потреблению воды!"
+    elif avg_daily >= water_goal * 0.8:
+        text += "👍 Хорошо! Вы близки к достижению своей цели по воде."
     else:
-        text += "✅ <b>Отлично!</b> Вы соблюдаете рекомендованную норму потребления воды. Продолжайте в том же духе!"
+        text += "💡 Старайтесь пить больше воды каждый день для достижения цели."
 
     # Отправляем изображение с графиком
     with open(image_path, 'rb') as photo:
@@ -325,16 +385,6 @@ async def show_water_statistics(callback_query: CallbackQuery, state: FSMContext
             parse_mode="HTML"
         )
 
-    # Добавляем клавиатуру для навигации
-    keyboard = [
-        [types.InlineKeyboardButton(text="◀️ Назад к выбору статистики", callback_data="stats:back")]
-    ]
-
-    await callback_query.message.answer(
-        "Выберите действие:",
-        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=keyboard)
-    )
-
     # Удаляем временный файл
     try:
         os.remove(image_path)
@@ -342,41 +392,35 @@ async def show_water_statistics(callback_query: CallbackQuery, state: FSMContext
         pass
 
 
-async def create_water_chart(weekly_data, water_goal, user_id):
+async def create_water_chart(data, water_goal, user_id):
     """Создает график потребления воды за неделю."""
     # Подготавливаем данные для графика
-    dates = [datetime.strptime(item['date'], "%Y-%m-%d") for item in weekly_data]
-    amounts = [item['amount'] for item in weekly_data]
-
-    # Форматируем даты для отображения
-    date_labels = [date.strftime("%d.%m") for date in dates]
+    dates = [format_date(day['date']) for day in data]
+    amounts = [day['amount'] for day in data]
 
     # Создаем график
     plt.figure(figsize=(10, 6))
 
     # Строим столбчатую диаграмму
-    bars = plt.bar(date_labels, amounts, color='#4682b8', width=0.6)
+    bars = plt.bar(dates, amounts, color='#4682b8', width=0.6)
 
-    # Добавляем горизонтальную линию для цели
-    plt.axhline(y=water_goal, color='red', linestyle='--', label=f'Цель: {water_goal} мл')
+    # Добавляем горизонтальную линию с целью
+    plt.axhline(y=water_goal, color='red', linestyle='--', alpha=0.7)
+    plt.text(0, water_goal + 100, f'Цель: {water_goal} мл', color='red')
 
     # Добавляем подписи значений над столбцами
-    for i, bar in enumerate(bars):
+    for bar in bars:
         height = bar.get_height()
-        if height > 0:  # Добавляем подписи только для ненулевых значений
-            plt.text(
-                bar.get_x() + bar.get_width() / 2,
-                height + 100,  # Немного выше столбца
-                f'{int(height)}',
-                ha='center',
-                fontsize=10
-            )
+        if height > 0:
+            plt.text(bar.get_x() + bar.get_width() / 2., height + 50,
+                     f'{int(height)}',
+                     ha='center', va='bottom', rotation=0)
 
     # Настраиваем график
     plt.title('Потребление воды за неделю', fontsize=16)
-    plt.ylabel('Количество (мл)', fontsize=12)
     plt.xlabel('Дата', fontsize=12)
-    plt.legend()
+    plt.ylabel('Количество (мл)', fontsize=12)
+    plt.ylim(0, max(max(amounts) + 500 if amounts else water_goal, water_goal + 500))
     plt.grid(axis='y', alpha=0.3)
     plt.tight_layout()
 
@@ -388,15 +432,22 @@ async def create_water_chart(weekly_data, water_goal, user_id):
     return filename
 
 
-async def goto_diary(callback_query: CallbackQuery):
-    """Переход к дневнику питания."""
-    from diary import show_diary
-    await show_diary(callback_query.message, None)
+async def goto_tracker(callback_query: CallbackQuery, state: FSMContext):
+    """Перенаправляет пользователя в другой трекер."""
+    action = callback_query.data.split(':')[1]
+
+    if action == "diary":
+        from diary import show_diary
+        await show_diary(callback_query.message, state)
+    elif action == "water":
+        from water_tracker import water_tracker
+        await water_tracker(callback_query.message, state)
+
     await callback_query.answer()
 
 
-async def goto_water(callback_query: CallbackQuery):
-    """Переход к трекеру воды."""
-    from water_tracker import water_tracker
-    await water_tracker(callback_query.message, None)
-    await callback_query.answer()
+def register_visualization_handlers(dp: Dispatcher):
+    """Регистрирует обработчики для модуля визуализации."""
+    # Обработка кнопок в меню статистики
+    dp.callback_query.register(handle_statistics_callback, lambda c: c.data.startswith("stats:"))
+    dp.callback_query.register(goto_tracker, lambda c: c.data.startswith("goto:"))

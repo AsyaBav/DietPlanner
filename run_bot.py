@@ -10,12 +10,6 @@ from handlers import register_handlers
 from database import close_db
 
 
-# Настройка логирования
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-logging.basicConfig(level=logging.DEBUG)
-
 # Создаем бота и диспетчер
 bot = None
 dp = None
@@ -23,23 +17,24 @@ dp = None
 # Отключаем обработку сигналов, которая вызывает проблему set_wakeup_fd
 signal.signal(signal.SIGINT, signal.SIG_DFL)
 
+# Настройка логирования
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.DEBUG)
+
 # Функция запуска бота
 async def start_bot():
     global bot, dp
-
     # Проверяем токен
     if not TOKEN or TOKEN == "your_bot_token_here":
         logger.error("Токен бота не указан! Укажите действительный токен в .env файле.")
         logger.info("Для тестирования используем эмуляцию бота без подключения к Telegram API")
-        # Эмулируем работу без реального подключения к API Telegram
         return
-
     try:
         bot = Bot(token=TOKEN)
         dp = Dispatcher(storage=MemoryStorage())
 
-        # Регистрируем обработчики
-        register_handlers(dp)
+        register_handlers(dp)        # Регистрируем обработчики
 
         logger.info("Бот запущен!")
         await dp.start_polling(
@@ -47,7 +42,6 @@ async def start_bot():
             skip_updates=True,
             timeout=60,
             relax=0.1,
-            #allowed_updates=types.AllowedUpdates.all()
         )
     except Exception as e:
         logger.error(f"Ошибка при запуске бота: {e}")

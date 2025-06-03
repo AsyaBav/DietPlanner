@@ -138,24 +138,97 @@ def search_food(query, limit=5):
 def get_food_nutrients(food_name):
     """
     Получает информацию о пищевой ценности обычного продукта.
+    """
+    try:
+        # Сохраняем оригинальное русское название
+        original_name = food_name
 
+        # Переводим название на английский для API
+        translated_name = translate_to_english(food_name)
+        logger.info(f"Getting nutrients for: {food_name} (translated: {translated_name})")
+
+        data = make_request('POST', '/natural/nutrients', json={'query': translated_name})
+
+        if not data or 'foods' not in data or len(data['foods']) == 0:
+            logger.error("No food data received from API")
+            return None
+
+        food_data = data['foods'][0]
+
+        # Используем оригинальное русское название или переводим обратно, если его нет
+        food_name_ru = original_name if original_name else translate_to_russian(food_data.get('food_name', ''))
+
+        return {
+            'food_name': food_name_ru,  # Используем русское название
+            'serving_qty': food_data.get('serving_qty', 1),
+            'serving_unit': food_data.get('serving_unit', 'г'),
+            'serving_weight_grams': food_data.get('serving_weight_grams', 100),
+            'calories': food_data.get('nf_calories', 0),
+            'protein': food_data.get('nf_protein', 0),
+            'fat': food_data.get('nf_total_fat', 0),
+            'carbs': food_data.get('nf_total_carbohydrate', 0)
+        }
+    except Exception as e:
+        logger.error(f"Error in get_food_nutrients: {str(e)}", exc_info=True)
+        return None
+'''def get_food_nutrients(food_name):
+    """
+    Получает информацию о пищевой ценности обычного продукта.
     Args:
         food_name (str): Название продукта
-
     Returns:
         dict: Информация о пищевой ценности
     """
-    logger.info(f"Получение информации о пищевой ценности продукта: {food_name}")
+    try:
+        # Переводим название на английский для API
+        translated_name = translate_to_english(food_name)
+        logger.info(f"Getting nutrients for: {food_name} (translated: {translated_name})")
 
-    data = make_request('POST', '/natural/nutrients', json={'query': food_name})
+        data = make_request('POST', '/natural/nutrients', json={'query': translated_name})
+
+        if not data or 'foods' not in data or len(data['foods']) == 0:
+            logger.error("No food data received from API")
+            return None
+
+        food_data = data['foods'][0]
+
+        # Переводим название обратно на русский
+        food_name_ru = translate_to_russian(food_data.get('food_name', food_name))
+
+        return {
+            'food_name': food_data.get('food_name', food_name),
+            'serving_qty': food_data.get('serving_qty', 1),
+            'serving_unit': food_data.get('serving_unit', 'г'),
+            'serving_weight_grams': food_data.get('serving_weight_grams', 100),
+            'calories': food_data.get('nf_calories', 0),
+            'protein': food_data.get('nf_protein', 0),
+            'fat': food_data.get('nf_total_fat', 0),
+            'carbs': food_data.get('nf_total_carbohydrate', 0)
+        }
+    except Exception as e:
+        logger.error(f"Error in get_food_nutrients: {str(e)}", exc_info=True)
+        return None'''
+
+
+def get_branded_food_info(nix_item_id):
+    """
+    Получает информацию о пищевой ценности брендированного продукта по ID.
+    """
+    logger.info(f"Получение информации о брендированном продукте: {nix_item_id}")
+
+    data = make_request('GET', f'/search/item?nix_item_id={nix_item_id}')
 
     if not data or 'foods' not in data or len(data['foods']) == 0:
         return None
 
     food_data = data['foods'][0]
 
+    # Переводим название на русский
+    food_name_ru = translate_to_russian(food_data.get('food_name', ''))
+
     return {
-        'food_name': food_data.get('food_name', food_name),
+        'food_name': food_name_ru,  # Используем переведенное название
+        'brand_name': food_data.get('brand_name', ''),
         'serving_qty': food_data.get('serving_qty', 1),
         'serving_unit': food_data.get('serving_unit', 'г'),
         'serving_weight_grams': food_data.get('serving_weight_grams', 100),
@@ -165,14 +238,11 @@ def get_food_nutrients(food_name):
         'carbs': food_data.get('nf_total_carbohydrate', 0)
     }
 
-
-def get_branded_food_info(nix_item_id):
+'''def get_branded_food_info(nix_item_id):
     """
     Получает информацию о пищевой ценности брендированного продукта по ID.
-
     Args:
         nix_item_id (str): ID брендированного продукта
-
     Returns:
         dict: Информация о пищевой ценности
     """
@@ -195,7 +265,7 @@ def get_branded_food_info(nix_item_id):
         'protein': food_data.get('nf_protein', 0),
         'fat': food_data.get('nf_total_fat', 0),
         'carbs': food_data.get('nf_total_carbohydrate', 0)
-    }
+    }'''
 
 
 def get_nutrients_from_text(text):

@@ -5,7 +5,7 @@ from config import MEAL_TYPES, WATER_INCREMENTS
 # Основная клавиатура при старте
 start_keyboard = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton(text="🚀 Погнали!")],
+        [KeyboardButton(text="🚀 Поехали!")],
         [KeyboardButton(text="ℹ️ О боте")]
     ],
     resize_keyboard=True
@@ -92,7 +92,6 @@ def create_meal_types_keyboard():
 
         keyboard.append(row)
 
-    # Добавляем кнопку отмены
     keyboard.append([InlineKeyboardButton(text="◀️ Назад к дневнику", callback_data="return_to_diary")])
 
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
@@ -154,7 +153,7 @@ def create_recipes_keyboard():
         ],
         [
             InlineKeyboardButton(text="➕ Создать свой", callback_data="recipe:create"),
-            InlineKeyboardButton(text="✨ Сгенерировать", callback_data="recipe:generate")
+            InlineKeyboardButton(text="✨ Все рецепты", callback_data="recipe:generate")
         ],
         [InlineKeyboardButton(text="◀️ Главное меню", callback_data="recipe:back")]
     ]
@@ -195,7 +194,7 @@ def create_meal_plan_keyboard():
         ],
         [
             InlineKeyboardButton(text="➕ Добавить блюдо", callback_data="plan:add"),
-            InlineKeyboardButton(text="🔄 Сгенерировать", callback_data="plan:generate")
+            InlineKeyboardButton(text="🔄 Все рецепты", callback_data="plan:generate")
         ],
         [
             InlineKeyboardButton(text="📝 Добавить в дневник", callback_data="plan:to_diary"),

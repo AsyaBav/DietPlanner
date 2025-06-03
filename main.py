@@ -2,7 +2,7 @@ import logging
 import os
 from flask import Flask, render_template, jsonify
 import time
-
+import asyncio
 
 
 # Импорт модулей бота
