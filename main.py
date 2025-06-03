@@ -5,6 +5,9 @@ import time
 
 
 
+
+
+
 # Импорт модулей бота
 from run_bot import start_bot_thread
 
@@ -54,3 +57,6 @@ else:
     logger.info("Starting Telegram bot in a separate thread...")
     bot_thread = start_bot_thread()
     logger.info("Bot thread started")
+
+    # Running the Flask app
+    app.run(host='0.0.0.0', port=5000)
