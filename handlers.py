@@ -685,7 +685,7 @@ async def about_bot(message: Message):
         "• База рецептов\n"
         "• Статистика и прогресс\n\n"
         "Для начала работы нажмите 🚀 Погнали!"
-    ```text
+    )
 
     await message.answer(help_text, parse_mode="HTML", reply_markup=start_keyboard)
 
