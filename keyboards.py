@@ -41,12 +41,14 @@ goal_keyboard = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
-# Клавиатура после расчета калорий
+# Клавиатура основного меню
 after_calories_keyboard = ReplyKeyboardMarkup(
     keyboard=[
-        [KeyboardButton(text="📝 Мой дневник"), KeyboardButton(text="💧 Водный баланс")],
-        [KeyboardButton(text="🍽 Рацион на день"), KeyboardButton(text="🔄 Рецепты")],
-        [KeyboardButton(text="👤 Профиль"), KeyboardButton(text="📈 Моя статистика")]
+        [KeyboardButton(text="👤 Профиль"), KeyboardButton(text="📖 Мой дневник")],
+        [KeyboardButton(text="🍽 Рацион"), KeyboardButton(text="💧 Трекер воды")],
+        [KeyboardButton(text="📊 Статистика"), KeyboardButton(text="🍳 Рецепты")],
+        [KeyboardButton(text="🩺 Консультация с диетологом"), KeyboardButton(text="🛒 Продуктовая корзина")],
+        [KeyboardButton(text="📚 Статьи"), KeyboardButton(text="📈 Отчет")]
     ],
     resize_keyboard=True
 )
@@ -234,4 +236,3 @@ def create_recent_foods_keyboard(recent_foods):
     ])
 
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
-

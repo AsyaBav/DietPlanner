@@ -3,7 +3,7 @@ from datetime import datetime
 from aiogram import Router, F, types
 from aiogram.filters import Command, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.state import State, StatesGroup
 
 from config import ACTIVITY_LEVELS
@@ -28,9 +28,9 @@ from water_tracker import (
 )
 from meal_planner import (
     show_meal_planner, handle_plan_date_selection, start_add_to_plan,
-    handle_meal_type_selection, handle_recipe_selection,
-    view_meal_type_plan, transfer_plan_to_diary, clear_plan,
-    show_daily_plan, MealPlanStates
+    handle_meal_type_selection, handle_recipe_selection, view_meal_type_plan,
+    delete_plan_entry, clear_plan, confirm_clear_plan, cancel_clear_plan,
+    transfer_plan_to_diary, generate_meal_plan, return_to_plan_view
 )
 from recipe_generator import (
     show_recipes_menu, handle_recipes_callback, view_recipe_details,
@@ -264,6 +264,17 @@ def register_handlers(dp):
     router.message.register(cmd_help, Command("help"))
     router.message.register(cmd_about, Command("about"))
 
+    # Обработчики inline-кнопок стартового меню
+    router.callback_query.register(about_bot_callback, F.data == "about_bot")
+    router.callback_query.register(start_registration_callback, F.data == "register")
+    router.callback_query.register(back_to_start, F.data == "back_to_start")
+
+    # Обработчик кнопки "О боте" (оставляем для совместимости)
+    router.message.register(about_bot, F.text == "ℹ️ О боте")
+
+    # Обработчик кнопки "Погнали!" (оставляем для совместимости)
+    router.message.register(start_registration, F.text == "🚀 Погнали!")
+
     # Обработка стартовых действий
     router.message.register(start_registration, F.text == "🚀 Погнали!")
     router.message.register(show_about, F.text == "ℹ️ О боте")
@@ -277,9 +288,9 @@ def register_handlers(dp):
     router.message.register(process_activity, StateFilter(RegistrationStates.waiting_for_activity))
     router.message.register(process_goal, StateFilter(RegistrationStates.waiting_for_goal))
 
-    # Основное меню после регистрации
+    # Обработчики основного меню
+    router.message.register(show_profile, F.text == "👤 Профиль")
     router.message.register(show_diary, F.text == "📝 Мой дневник")
-    router.message.register(water_tracker, F.text == "💧 Водный баланс")
     router.message.register(show_meal_planner, F.text == "🍽 Рацион на день")
     router.message.register(show_recipes_menu, F.text == "🔄 Рецепты")
     router.message.register(show_profile, F.text == "👤 Профиль")
@@ -307,13 +318,13 @@ def register_handlers(dp):
     router.callback_query.register(transfer_plan_to_diary, F.data == "plan:to_diary")
     router.callback_query.register(clear_plan, F.data == "plan:clear")
     router.callback_query.register(return_to_main_menu, F.data == "plan:back")
-    
+
     # Добавляем недостающие обработчики планировщика
     from meal_planner import (
         delete_plan_entry, confirm_clear_plan, cancel_clear_plan,
         transfer_plan_to_diary, generate_meal_plan, return_to_plan_view
     )
-    
+
     router.callback_query.register(delete_plan_entry, F.data.startswith("delete_plan_entry:"))
     router.callback_query.register(confirm_clear_plan, F.data.startswith("confirm_clear_plan:"))
     router.callback_query.register(cancel_clear_plan, F.data == "cancel_clear_plan")
@@ -376,15 +387,16 @@ async def cmd_start(message: Message, state: FSMContext):
 
         # Отправляем приветственное сообщение
         await message.answer(
-            f"👋 Привет, {message.from_user.first_name}!\n\n"
-            "Я твой персональный помощник по диетологии и правильному питанию.\n\n"
-            "Со мной ты сможешь:\n"
-            "• Рассчитать свой ИМТ и дневную норму калорий\n"
-            "• Вести дневник питания\n"
-            "• Следить за водным балансом\n"
-            "• Получать рекомендации по рациону\n"
-            "• Создавать и сохранять рецепты\n\n"
-            "Готов начать?",
+            f"Привет, {message.from_user.first_name}!\n\n"
+            "🍏 Я твой персональный помощник по диетологии и правильному питанию.\n\n"
+            "Я помогу тебе:\n"
+            "✅ Рассчитать идеальную норму калорий для твоей цели\n"
+            "✅ Составить вкусный и сбалансированный рацион\n"
+            "✅ Вести дневник питания\n"
+            "✅ Следить за водным балансом\n"
+            "✅ Дать рекомендации по питанию, учитывая твой образ жизни и активность 🚴‍♂️🏋️\n"
+            "✅ Поддерживать мотивацию на пути к лучшей версии себя! 🔥\n\n"
+            "Готов начать? Тогда жми на кнопки ниже и поехали! 🚀",
             reply_markup=start_keyboard
         )
     else:
@@ -793,6 +805,73 @@ async def show_profile(message: Message):
         reply_markup=types.InlineKeyboardMarkup(inline_keyboard=keyboard)
     )
 
+async def about_bot(message: Message):
+    """Информация о боте."""
+    help_text = (
+        "🤖 <b>О боте Diet Planner</b>\n\n"
+        "Я помогаю составлять персональный план питания на основе ваших целей.\n\n"
+        "<b>Мои возможности:</b>\n"
+        "• Расчет ИМТ и дневной нормы калорий\n"
+        "• Ведение дневника питания\n"
+        "• Трекер потребления воды\n"
+        "• Планирование рациона\n"
+        "• База рецептов\n"
+        "• Статистика и прогресс\n\n"
+        "Для начала работы нажмите 🚀 Погнали!"
+    )
+
+    await message.answer(help_text, parse_mode="HTML", reply_markup=start_keyboard)
+
+
+async def about_bot_callback(callback_query: CallbackQuery):
+    """Обработчик inline-кнопки 'О боте'."""
+    text = (
+        "Я — Fit&Food, твой персональный помощник по питанию и здоровому образу жизни! 🍏💪\n\n"
+        "Я помогу тебе:\n"
+        "✅ Рассчитать *идеальную норму калорий* для твоей цели.\n"
+        "✅ Составить вкусный и сбалансированный рацион. 🍽\n"
+        "✅ Дать рекомендации по питанию, учитывая твой образ жизни и активность. 🚴‍♂️🏋️\n"
+        "✅ Поддерживать мотивацию на пути к лучшей версии себя! 🔥\n\n"
+        "Моя миссия — сделать твое питание простым, понятным и эффективным. 💯"
+    )
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Назад", callback_data="back_to_start")],
+            [InlineKeyboardButton(text="Помощь", callback_data="help")]
+        ]
+    )
+
+    await callback_query.message.edit_text(text, parse_mode="Markdown", reply_markup=keyboard)
+
+
+async def start_registration_callback(callback_query: CallbackQuery, state: FSMContext):
+    """Обработчик inline-кнопки 'Зарегистрироваться'."""
+    await callback_query.message.edit_text(
+        "👶 Начинаем регистрацию\n\n"
+        "Для составления персонального плана питания мне нужно собрать немного информации о тебе."
+    )
+
+    await callback_query.message.answer("Для начала напишите свой возраст.")
+    await state.set_state(RegistrationStates.age)
+
+
+async def back_to_start(callback_query: CallbackQuery):
+    """Возврат к стартовому сообщению."""
+    text = (
+        f"Привет, {callback_query.from_user.first_name}!\n\n"
+        "🍏 Я твой персональный помощник по диетологии и правильному питанию.\n\n"
+        "Я помогу тебе:\n"
+        "✅ Рассчитать идеальную норму калорий для твоей цели\n"
+        "✅ Составить вкусный и сбалансированный рацион\n"
+        "✅ Вести дневник питания\n"
+        "✅ Следить за водным балансом\n"
+        "✅ Дать рекомендации по питанию, учитывая твой образ жизни и активность 🚴‍♂️🏋️\n"
+        "✅ Поддерживать мотивацию на пути к лучшей версии себя! 🔥\n\n"
+        "Готов начать? Тогда жми на кнопки ниже и поехали! 🚀"
+    )
+
+    await callback_query.message.edit_text(text, reply_markup=start_keyboard)
 
 # Добавьте эти функции в handlers.py
 async def edit_weight_handler(callback_query: CallbackQuery, state: FSMContext):
@@ -880,3 +959,72 @@ async def show_recipes_menu(message: Message):
         "🍴 Меню рецептов\n\nЗдесь ты можешь найти, сохранить или создать новые рецепты.",
         reply_markup=create_recipes_keyboard()
     )
+
+async def show_recipes(message: Message):
+    """Показывает раздел рецептов."""
+    await message.answer("🔧 Раздел рецептов в разработке!")
+
+
+async def show_consultation(message: Message):
+    """Показывает раздел консультации с диетологом."""
+    text = (
+        "🩺 <b>Консультация с диетологом</b>\n\n"
+        "Персональные рекомендации от квалифицированных специалистов помогут вам "
+        "достичь ваших целей в питании более эффективно и безопасно.\n\n"
+        "💡 <b>Почему это важно:</b>\n"
+        "• Индивидуальный подход к вашему здоровью\n"
+        "• Учет особенностей организма и заболеваний\n"
+        "• Профессиональная корректировка рациона\n"
+        "• Поддержка на пути к цели\n\n"
+        "🔧 <i>Раздел в разработке</i>"
+    )
+    await message.answer(text, parse_mode="HTML")
+
+
+async def show_shopping_cart(message: Message):
+    """Показывает продуктовую корзину."""
+    text = (
+        "🛒 <b>Продуктовая корзина</b>\n\n"
+        "Автоматически формируйте список покупок на основе вашего рациона!\n\n"
+        "📋 <b>Возможности:</b>\n"
+        "• Автоматическое составление списка из рациона\n"
+        "• Группировка продуктов по категориям\n"
+        "• Отметка купленных товаров\n"
+        "• Расчет количества на несколько дней\n\n"
+        "🔧 <i>Раздел в разработке</i>"
+    )
+    await message.answer(text, parse_mode="HTML")
+
+
+async def show_articles(message: Message):
+    """Показывает раздел статей."""
+    text = (
+        "📚 <b>Образовательные статьи</b>\n\n"
+        "Расширьте свои знания о правильном питании!\n\n"
+        "📖 <b>Темы статей:</b>\n"
+        "• Основы здорового питания\n"
+        "• Витамины и микроэлементы\n"
+        "• Психология пищевого поведения\n"
+        "• Интервальное голодание\n"
+        "• Спортивное питание\n"
+        "• Питание при различных заболеваниях\n\n"
+        "🔧 <i>Раздел в разработке</i>"
+    )
+    await message.answer(text, parse_mode="HTML")
+
+
+async def show_reports(message: Message):
+    """Показывает раздел отчетов."""
+    text = (
+        "📈 <b>Отчеты и прогресс</b>\n\n"
+        "Отслеживайте свой прогресс в достижении целей!\n\n"
+        "📊 <b>Доступные отчеты:</b>\n"
+        "• Динамика веса\n"
+        "• Соблюдение калорийности\n"
+        "• Баланс БЖУ\n"
+        "• Потребление воды\n"
+        "• Ежедневные записи\n\n"
+        "💡 <i>Регулярно вводите свой вес для точной статистики</i>\n\n"
+        "🔧 <i>Раздел в разработке</i>"
+    )
+    await message.answer(text, parse_mode="HTML")
