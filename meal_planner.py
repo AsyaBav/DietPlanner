@@ -65,15 +65,21 @@ async def show_meal_planner(message: types.Message, state: FSMContext):
         return
 
     # Показываем приветствие раздела рациона согласно ТЗ
+    keyboard = [
+        [
+            types.InlineKeyboardButton(text="🍽 На сегодня", callback_data="meal_plan:today"),
+            types.InlineKeyboardButton(text="📅 На неделю", callback_data="meal_plan:week")
+        ],
+        [types.InlineKeyboardButton(text="◀️ Главное меню", callback_data="meal_plan:back")]
+    ]
+
     await message.answer(
         "🍽 <b>Сформируйте идеальный рацион под ваши цели!</b>\n\n"
         "Я помогу составить персональный план питания, учитывающий ваши потребности в калориях и макронутриентах.\n\n"
-        "Выберите действие:",
-        parse_mode="HTML"
+        "Выберите период для генерации рациона:",
+        parse_mode="HTML",
+        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=keyboard)
     )
-
-    # Показываем план на текущий день
-    await show_daily_plan(message, state)
 
 
 async def show_daily_plan(message: types.Message, state: FSMContext, selected_date=None):
@@ -491,6 +497,309 @@ async def generate_meal_plan(callback_query: CallbackQuery, state: FSMContext):
     # Пытаемся распределить калории по приемам пищи
     # Завтрак: 25%, Обед: 35%, Ужин: 30%, Перекус: 10%
     meal_calories = {
+
+
+
+async def handle_meal_plan_menu(callback_query: CallbackQuery, state: FSMContext):
+    """Обрабатывает выбор в меню рациона."""
+    action = callback_query.data.split(':')[1]
+    
+    if action == "today":
+        await generate_daily_meal_plan(callback_query, state)
+    elif action == "week":
+        await generate_weekly_meal_plan(callback_query, state)
+    elif action == "back":
+        from keyboards import after_calories_keyboard
+        await callback_query.message.delete()
+        await callback_query.message.answer(
+            "Вы вернулись в главное меню",
+            reply_markup=after_calories_keyboard
+        )
+    await callback_query.answer()
+
+
+async def generate_daily_meal_plan(callback_query: CallbackQuery, state: FSMContext):
+    """Генерирует рацион на сегодня."""
+    user_id = callback_query.from_user.id
+    user = get_user(user_id)
+
+    if not user:
+        await callback_query.message.answer("Сначала нужно зарегистрироваться.")
+        await callback_query.answer()
+        return
+
+    await callback_query.message.answer("🔄 Генерирую рацион на сегодня...")
+
+    # Получаем цель по калориям и макронутриентам
+    goal_calories = user['goal_calories']
+    goal_protein = user['protein']
+    goal_fat = user['fat']
+    goal_carbs = user['carbs']
+
+    # Текущая дата
+    today = datetime.now().strftime("%Y-%m-%d")
+
+    # Очищаем текущий план на сегодня
+    clear_meal_plan(user_id, today)
+
+    # Получаем сохраненные рецепты пользователя
+    recipes = get_saved_recipes(user_id)
+
+    if not recipes:
+        await callback_query.message.answer(
+            "У вас пока нет сохраненных рецептов для генерации рациона. "
+            "Сначала добавьте рецепты в разделе 'Рецепты'."
+        )
+        await callback_query.answer()
+        return
+
+    # Распределяем калории по приемам пищи
+    meal_distribution = {
+        "Завтрак": 0.25,
+        "Обед": 0.35,
+        "Ужин": 0.30,
+        "Перекус": 0.10
+    }
+
+    generated_plan = []
+
+    for meal_type, percentage in meal_distribution.items():
+        target_calories = goal_calories * percentage
+        
+        # Находим подходящие рецепты
+        suitable_recipes = [
+            r for r in recipes
+            if target_calories * 0.8 <= r['calories'] <= target_calories * 1.2
+        ]
+
+        if not suitable_recipes:
+            # Если нет подходящих, берем ближайший по калориям
+            suitable_recipes = sorted(recipes, key=lambda r: abs(r['calories'] - target_calories))[:1]
+
+        if suitable_recipes:
+            selected_recipe = random.choice(suitable_recipes)
+            add_to_meal_plan(user_id, selected_recipe['id'], meal_type, today)
+            generated_plan.append({
+                'meal_type': meal_type,
+                'recipe': selected_recipe
+            })
+
+    # Показываем сгенерированный план
+    await show_generated_daily_plan(callback_query, state, generated_plan, today)
+
+
+async def show_generated_daily_plan(callback_query: CallbackQuery, state: FSMContext, plan, date):
+    """Показывает сгенерированный план на день."""
+    
+    message_text = f"🍽 <b>Рацион на {format_date(date)}</b>\n\n"
+    
+    total_calories = 0
+    total_protein = 0
+    total_fat = 0
+    total_carbs = 0
+    
+    for item in plan:
+        recipe = item['recipe']
+        meal_type = item['meal_type']
+        
+        message_text += f"<b>{meal_type}:</b>\n"
+        message_text += f"  • {recipe['name']} – {recipe['calories']:.0f} ккал\n"
+        message_text += f"    БЖУ: {recipe['protein']:.1f}г / {recipe['fat']:.1f}г / {recipe['carbs']:.1f}г\n\n"
+        
+        total_calories += recipe['calories']
+        total_protein += recipe['protein']
+        total_fat += recipe['fat']
+        total_carbs += recipe['carbs']
+    
+    message_text += f"<b>Итого за день:</b>\n"
+    message_text += f"Калории: {total_calories:.0f} ккал\n"
+    message_text += f"БЖУ: {total_protein:.1f}г / {total_fat:.1f}г / {total_carbs:.1f}г"
+    
+    # Создаем клавиатуру с возможностью замены блюд и сохранения
+    keyboard = []
+    
+    for item in plan:
+        recipe = item['recipe']
+        meal_type = item['meal_type']
+        keyboard.append([
+            types.InlineKeyboardButton(
+                text=f"🔄 Заменить {recipe['name'][:20]}...",
+                callback_data=f"replace_dish:{recipe['id']}:{meal_type}:{date}"
+            )
+        ])
+    
+    keyboard.append([
+        types.InlineKeyboardButton(
+            text="💾 Сохранить рацион в дневник",
+            callback_data=f"save_plan_to_diary:{date}"
+        )
+    ])
+    
+    keyboard.append([
+        types.InlineKeyboardButton(text="🔄 Сгенерировать заново", callback_data="meal_plan:today"),
+        types.InlineKeyboardButton(text="◀️ Назад", callback_data="meal_plan:back")
+    ])
+
+    await callback_query.message.answer(
+        message_text,
+        parse_mode="HTML",
+        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=keyboard)
+    )
+
+
+async def generate_weekly_meal_plan(callback_query: CallbackQuery, state: FSMContext):
+    """Генерирует рацион на неделю."""
+    await callback_query.message.answer(
+        "📅 <b>Генерация недельного рациона</b>\n\n"
+        "🔧 Функция генерации рациона на неделю находится в разработке.\n"
+        "Пока что вы можете генерировать рацион на каждый день отдельно.",
+        parse_mode="HTML",
+        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=[
+            [types.InlineKeyboardButton(text="◀️ Назад", callback_data="meal_plan:back")]
+        ])
+    )
+    await callback_query.answer()
+
+
+async def handle_replace_dish(callback_query: CallbackQuery, state: FSMContext):
+    """Обрабатывает замену блюда в рационе."""
+    data = callback_query.data.split(':')
+    recipe_id = int(data[1])
+    meal_type = data[2]
+    date = data[3]
+    
+    user_id = callback_query.from_user.id
+    
+    # Получаем текущий рецепт для определения целевых калорий
+    current_recipe = get_recipe_details(recipe_id)
+    if not current_recipe:
+        await callback_query.answer("Ошибка: рецепт не найден")
+        return
+    
+    target_calories = current_recipe['calories']
+    
+    # Получаем все рецепты пользователя кроме текущего
+    all_recipes = get_saved_recipes(user_id)
+    available_recipes = [r for r in all_recipes if r['id'] != recipe_id]
+    
+    if not available_recipes:
+        await callback_query.answer("Нет других рецептов для замены")
+        return
+    
+    # Находим похожие по калориям рецепты
+    similar_recipes = [
+        r for r in available_recipes
+        if target_calories * 0.8 <= r['calories'] <= target_calories * 1.2
+    ]
+    
+    if not similar_recipes:
+        # Если нет похожих, берем 3 ближайших по калориям
+        similar_recipes = sorted(
+            available_recipes, 
+            key=lambda r: abs(r['calories'] - target_calories)
+        )[:3]
+    
+    # Показываем варианты замены
+    message_text = f"🔄 <b>Замена блюда для {meal_type}</b>\n\n"
+    message_text += f"Текущее: {current_recipe['name']} ({current_recipe['calories']} ккал)\n\n"
+    message_text += "Выберите замену:"
+    
+    keyboard = []
+    for recipe in similar_recipes[:5]:  # Показываем максимум 5 вариантов
+        keyboard.append([
+            types.InlineKeyboardButton(
+                text=f"{recipe['name']} ({recipe['calories']} ккал)",
+                callback_data=f"confirm_replace:{recipe_id}:{recipe['id']}:{meal_type}:{date}"
+            )
+        ])
+    
+    keyboard.append([
+        types.InlineKeyboardButton(text="◀️ Отмена", callback_data=f"show_plan:{date}")
+    ])
+    
+    await callback_query.message.answer(
+        message_text,
+        parse_mode="HTML",
+        reply_markup=types.InlineKeyboardMarkup(inline_keyboard=keyboard)
+    )
+    await callback_query.answer()
+
+
+async def confirm_replace_dish(callback_query: CallbackQuery, state: FSMContext):
+    """Подтверждает замену блюда."""
+    data = callback_query.data.split(':')
+    old_recipe_id = int(data[1])
+    new_recipe_id = int(data[2])
+    meal_type = data[3]
+    date = data[4]
+    
+    user_id = callback_query.from_user.id
+    
+    # Получаем ID записи в плане питания для замены
+    plan_entries = get_meal_plan_for_type(user_id, meal_type, date)
+    plan_entry_to_replace = None
+    
+    for entry in plan_entries:
+        if entry['recipe_id'] == old_recipe_id:
+            plan_entry_to_replace = entry
+            break
+    
+    if plan_entry_to_replace:
+        # Удаляем старую запись
+        remove_from_meal_plan(plan_entry_to_replace['id'])
+        
+        # Добавляем новую
+        add_to_meal_plan(user_id, new_recipe_id, meal_type, date)
+        
+        new_recipe = get_recipe_details(new_recipe_id)
+        await callback_query.message.answer(
+            f"✅ Блюдо заменено на {new_recipe['name']}!"
+        )
+        
+        # Показываем обновленный план
+        await show_daily_plan(callback_query.message, state, date)
+    else:
+        await callback_query.message.answer("❌ Ошибка при замене блюда")
+    
+    await callback_query.answer()
+
+
+async def save_plan_to_diary(callback_query: CallbackQuery, state: FSMContext):
+    """Сохраняет весь рацион в дневник."""
+    date = callback_query.data.split(':')[1]
+    user_id = callback_query.from_user.id
+
+    # Получаем план питания на выбранный день
+    daily_plan = get_daily_meal_plan(user_id, date)
+
+    if not daily_plan:
+        await callback_query.message.answer("План питания на этот день пуст.")
+        await callback_query.answer()
+        return
+
+    # Переносим каждое блюдо в дневник
+    for entry in daily_plan:
+        # Получаем детали рецепта
+        recipe = get_recipe_details(entry['recipe_id'])
+
+        if recipe:
+            # Добавляем запись в дневник питания
+            add_food_entry(
+                user_id,
+                date,
+                entry['meal_type'],
+                recipe['name'],
+                recipe['calories'],
+                recipe['protein'],
+                recipe['fat'],
+                recipe['carbs']
+            )
+
+    await callback_query.message.answer(
+        f"✅ Рацион на {format_date(date)} сохранен в дневник питания!"
+    )
+    await callback_query.answer()
+
         "Завтрак": goal_calories * 0.25,
         "Обед": goal_calories * 0.35,
         "Ужин": goal_calories * 0.30,

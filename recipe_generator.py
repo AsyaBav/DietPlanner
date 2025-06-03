@@ -833,64 +833,8 @@ async def cancel_recipe_creation(callback_query: CallbackQuery, state: FSMContex
 
 async def generate_recipe(callback_query: CallbackQuery, state: FSMContext):
     """Генерирует рецепт на основе цели пользователя."""
-    user_id = callback_query.from_user.id
-    user = get_user(user_id)
-
-    if not user or not user.get('goal'):
-        await callback_query.message.answer(
-            "Сначала нужно завершить регистрацию и указать цель."
-        )
-        await callback_query.answer()
-        return
-
-    goal = user['goal']
-
-    '''# Выбираем случайный рецепт из базовых шаблонов в соответствии с целью
-    base_recipes = BASE_RECIPES.get(goal)
-
-    if not base_recipes:
-        # Если для цели нет специальных рецептов, берем из поддержания веса
-        base_recipes = BASE_RECIPES["🔄 Поддержание текущего веса"]
-
-    # Выбираем случайный рецепт
-    recipe = random.choice(base_recipes)
-
-    # Сохраняем данные в состояние
-    await state.update_data(
-        name=recipe['name'],
-        ingredients=recipe['ingredients'],
-        instructions=recipe['instructions'],
-        calories=recipe['calories'],
-        protein=recipe['protein'],
-        fat=recipe['fat'],
-        carbs=recipe['carbs']
-    )
-
-    # Показываем информацию о рецепте для подтверждения
-    confirmation_text = (
-        f"<b>Сгенерирован рецепт для {goal}:</b>\n\n"
-        f"<b>Название:</b> {recipe['name']}\n\n"
-        f"<b>Ингредиенты:</b>\n{recipe['ingredients']}\n\n"
-        f"<b>Способ приготовления:</b>\n{recipe['instructions']}\n\n"
-        f"<b>Пищевая ценность:</b>\n"
-        f"• Калории: {recipe['calories']} ккал\n"
-        f"• Белки: {recipe['protein']} г\n"
-        f"• Жиры: {recipe['fat']} г\n"
-        f"• Углеводы: {recipe['carbs']} г\n\n"
-        f"Хотите сохранить этот рецепт?"
-    )
-
-    # Создаем клавиатуру для подтверждения
-    keyboard = create_recipe_confirmation_keyboard()
-
-    await callback_query.message.answer(
-        confirmation_text,
-        parse_mode="HTML",
-        reply_markup=keyboard
-    )
-
-    await state.set_state(RecipeStates.confirming)
-    await callback_query.answer()'''
+    await callback_query.message.answer("🔧 Генерация рецепта в разработке!")
+    await callback_query.answer()
 
 
 async def recipe_to_diary(callback_query: CallbackQuery, state: FSMContext):

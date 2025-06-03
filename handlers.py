@@ -228,7 +228,7 @@ def register_handlers(dp):
     router.message.register(process_recipe_protein, StateFilter(RecipeStates.entering_protein))
     router.message.register(process_recipe_fat, StateFilter(RecipeStates.entering_fat))
     router.message.register(process_recipe_carbs, StateFilter(RecipeStates.entering_carbs))
-    
+
     # Обработчики состояний профиля
     router.message.register(process_new_weight, StateFilter(ProfileStates.editing_weight))
     router.message.register(process_new_goal, StateFilter(ProfileStates.editing_goal))
@@ -685,7 +685,7 @@ async def about_bot(message: Message):
         "• База рецептов\n"
         "• Статистика и прогресс\n\n"
         "Для начала работы нажмите 🚀 Погнали!"
-    )
+    ```text
 
     await message.answer(help_text, parse_mode="HTML", reply_markup=start_keyboard)
 
@@ -812,7 +812,7 @@ async def process_new_weight(message: Message, state: FSMContext):
         if new_weight < 30 or new_weight > 300:
             raise ValueError
         user_id = message.from_user.id
-        
+
         user = get_user(user_id)
         tdee = calculate_tdee(
             weight=new_weight,
@@ -823,7 +823,7 @@ async def process_new_weight(message: Message, state: FSMContext):
         )
         new_calories = get_goal_calories(tdee, user['goal'])
         macros = calculate_macronutrients(new_calories, new_weight, user['goal'])
-        
+
         update_user(
             user_id,
             weight=new_weight,
@@ -836,7 +836,7 @@ async def process_new_weight(message: Message, state: FSMContext):
         await show_profile(message)
     except ValueError:
         await message.answer("❌ Введите корректный вес (30-300 кг)")
-    
+
     await state.clear()
 
 async def process_new_goal(message: Message, state: FSMContext):
@@ -844,10 +844,10 @@ async def process_new_goal(message: Message, state: FSMContext):
     if message.text not in valid_goals:
         await message.answer("❌ Выберите цель из предложенных вариантов")
         return
-    
+
     user_id = message.from_user.id
     user = get_user(user_id)
-    
+
     # Пересчет калорий
     tdee = calculate_tdee(
         weight=user['weight'],
@@ -858,7 +858,7 @@ async def process_new_goal(message: Message, state: FSMContext):
     )
     new_calories = get_goal_calories(tdee, message.text)
     macros = calculate_macronutrients(new_calories, user['weight'], message.text)
-    
+
     update_user(
         user_id, 
         goal=message.text,
@@ -867,7 +867,7 @@ async def process_new_goal(message: Message, state: FSMContext):
         fat=macros['fat'],
         carbs=macros['carbs']
     )
-    
+
     await message.answer("✔️ Цель успешно обновлена!")
     await show_profile(message)
     await state.clear()
@@ -877,10 +877,10 @@ async def process_new_activity(message: Message, state: FSMContext):
     if message.text not in valid_activities:
         await message.answer("❌ Выберите уровень активности из предложенных")
         return
-    
+
     user_id = message.from_user.id
     user = get_user(user_id)
-    
+
     # Пересчет калорий с новой активностью
     tdee = calculate_tdee(
         weight=user['weight'],
@@ -891,7 +891,7 @@ async def process_new_activity(message: Message, state: FSMContext):
     )
     new_calories = get_goal_calories(tdee, user['goal'])
     macros = calculate_macronutrients(new_calories, user['weight'], user['goal'])
-    
+
     update_user(
         user_id,
         activity_level=message.text,
@@ -900,7 +900,7 @@ async def process_new_activity(message: Message, state: FSMContext):
         fat=macros['fat'],
         carbs=macros['carbs']
     )
-    
+
     await message.answer("✔️ Уровень активности обновлен!")
     await show_profile(message)
     await state.clear()
