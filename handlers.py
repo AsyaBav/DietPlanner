@@ -88,42 +88,7 @@ def register_handlers(dp):
     router.callback_query.register(view_favorite_recipe, F.data.startswith("view_fav_recipe:"))
     router.callback_query.register(back_to_favorites_handler, F.data == "back_to_favorites")
 
-    @router.message(RecipeStates.waiting_for_name)
-    async def process_recipe_name(message: Message, state: FSMContext):
-        await state.update_data(name=message.text)
-        await message.answer("Введите ингредиенты (через запятую):")
-        await state.set_state(RecipeStates.waiting_for_ingredients)
-
-    @router.message(RecipeStates.waiting_for_ingredients)
-    async def process_recipe_ingredients(message: Message, state: FSMContext):
-        await state.update_data(ingredients=message.text)
-        await message.answer("Введите инструкции приготовления:")
-        await state.set_state(RecipeStates.waiting_for_instructions)
-
-    @router.message(RecipeStates.waiting_for_instructions)
-    async def process_recipe_instructions(message: Message, state: FSMContext):
-        await state.update_data(instructions=message.text)
-        data = await state.get_data()
-        # Сохраняем рецепт в базу данных
-        from database import save_recipe
-
-        recipe_id = save_recipe(
-            user_id=message.from_user.id,
-            name=data['name'],
-            ingredients=data['ingredients'],
-            instructions=message.text,
-            calories=0,  # Временные значения
-            protein=0,
-            fat=0,
-            carbs=0
-        )
-        if recipe_id:
-            await message.answer("✅ Рецепт успешно сохранен!")
-            await show_recipes_menu(message)
-        else:
-            await message.answer("❌ Ошибка при сохранении рецепта")
-
-        await state.clear()
+    # Обработчики состояний рецептов уже зарегистрированы ниже
 
     @router.callback_query(F.data == "back_to_search")
     async def back_to_search_handler(callback_query: CallbackQuery, state: FSMContext):
@@ -148,105 +113,7 @@ def register_handlers(dp):
     router.callback_query.register(recalculate_handler, F.data == "recalculate")
     router.callback_query.register(profile_back_handler, F.data == "profile_back")
 
-    @router.message(ProfileStates.editing_weight)
-    async def process_new_weight(message: Message, state: FSMContext):
-        try:
-            new_weight = float(message.text)
-            if new_weight < 30 or new_weight > 300:
-                raise ValueError
-            user_id = message.from_user.id
-            update_user(message.from_user.id, weight=new_weight)
-
-            user = get_user(user_id)
-            tdee = calculate_tdee(
-                weight=new_weight,
-                height=user['height'],
-                age=user['age'],
-                activity_level=user['activity_level'],
-                sex=user['gender']
-            )
-            new_calories = get_goal_calories(tdee, user['goal'])
-            update_user(user_id, goal_calories=new_calories)
-
-            await message.answer("✔️ Вес обновлен!")
-            await show_profile(message)
-        except ValueError:
-            await message.answer("❌ Введите корректное число")
-        await state.clear()
-
-        # Обработчик нового веса
-        @router.message(ProfileStates.editing_weight)
-        async def process_new_weight(message: Message, state: FSMContext):
-            try:
-                new_weight = float(message.text)
-                if new_weight < 30 or new_weight > 300:
-                    raise ValueError
-                user_id = message.from_user.id
-                update_user(message.from_user.id, weight=new_weight)
-
-                user = get_user(user_id)
-                tdee = calculate_tdee(
-                    weight=new_weight,
-                    height=user['height'],
-                    age=user['age'],
-                    activity_level=user['activity_level'],
-                    sex=user['gender']
-                )
-                new_calories = get_goal_calories(tdee, user['goal'])
-                #update_user(user_id, goal_calories=new_calories)
-                macros = calculate_macronutrients(new_calories, new_weight, user['goal'])
-                update_user(
-                    user_id,
-                    goal_calories=new_calories,
-                    protein=macros['protein'],
-                    fat=macros['fat'],
-                    carbs=macros['carbs']
-                )
-                await message.answer("✔️ Вес успешно обновлен!")
-                await show_profile(message)
-            except ValueError:
-                await message.answer("❌ Введите корректный вес (30-300 кг)")
-
-            await state.clear()
-
-        # Обработчик новой цели
-        @router.message(ProfileStates.editing_goal)
-        async def process_new_goal(message: Message, state: FSMContext):
-            valid_goals = ["🔻 Похудение", "🔺 Набор веса", "🔄 Поддержание веса"]
-            if message.text not in valid_goals:
-                await message.answer("❌ Выберите цель из предложенных вариантов")
-                return
-            user_id = message.from_user.id
-            update_user(message.from_user.id, goal=message.text)
-
-            # Пересчет калорий
-            user = get_user(user_id)
-            tdee = calculate_tdee(
-                weight=user['weight'],
-                height=user['height'],
-                age=user['age'],
-                activity_level=user['activity_level'],
-                sex=user['gender']
-            )
-            new_calories = get_goal_calories(tdee, message.text)
-            update_user(user_id, goal_calories=new_calories)
-
-            await message.answer("✔️ Цель успешно обновлена!")
-            await show_profile(message)
-            await state.clear()
-
-        # Обработчик новой активности
-        @router.message(ProfileStates.editing_activity)
-        async def process_new_activity(message: Message, state: FSMContext):
-            valid_activities = list(ACTIVITY_LEVELS.keys())
-            if message.text not in valid_activities:
-                await message.answer("❌ Выберите уровень активности из предложенных")
-                return
-
-            update_user(message.from_user.id, activity_level=message.text)
-            await message.answer("✔️ Уровень активности обновлен!")
-            await show_profile(message)
-            await state.clear()
+    # Обработчики состояний профиля определены отдельно ниже
 
     # Обработчик для трекера воды
     router.callback_query.register(add_water_amount, F.data.startswith("water_add:"))
@@ -323,21 +190,8 @@ def register_handlers(dp):
     router.callback_query.register(generate_meal_plan, F.data == "plan:generate")
     router.callback_query.register(return_to_plan_view, F.data == "return_to_plan_view")
 
-    # Добавляем недостающие обработчики планировщика
-    from meal_planner import (
-        delete_plan_entry, confirm_clear_plan, cancel_clear_plan,
-        transfer_plan_to_diary, generate_meal_plan, return_to_plan_view
-    )
+    # Обработчики планировщика уже импортированы в начале файла и зарегистрированы выше
 
-    router.callback_query.register(delete_plan_entry, F.data.startswith("delete_plan_entry:"))
-    router.callback_query.register(confirm_clear_plan, F.data.startswith("confirm_clear_plan:"))
-    router.callback_query.register(cancel_clear_plan, F.data == "cancel_clear_plan")
-    router.callback_query.register(transfer_plan_to_diary, F.data == "plan:to_diary")
-    router.callback_query.register(generate_meal_plan, F.data == "plan:generate")
-    router.callback_query.register(return_to_plan_view, F.data == "return_to_plan_view")
-
-    #router.callback_query.register(handle_recipes_callback, F.data.startswith("recipe:"))
-    #router.callback_query.register(view_recipe_details, F.data.startswith("view_recipe:"))
     router.callback_query.register(toggle_recipe_favorite_status, F.data.startswith("toggle_favorite:"))
     router.callback_query.register(delete_recipe_handler, F.data.startswith("delete_recipe:"))
     router.callback_query.register(return_to_recipes_menu, F.data == "return_to_recipes")
@@ -370,6 +224,11 @@ def register_handlers(dp):
     router.message.register(process_recipe_protein, StateFilter(RecipeStates.entering_protein))
     router.message.register(process_recipe_fat, StateFilter(RecipeStates.entering_fat))
     router.message.register(process_recipe_carbs, StateFilter(RecipeStates.entering_carbs))
+    
+    # Обработчики состояний профиля
+    router.message.register(process_new_weight, StateFilter(ProfileStates.editing_weight))
+    router.message.register(process_new_goal, StateFilter(ProfileStates.editing_goal))
+    router.message.register(process_new_activity, StateFilter(ProfileStates.editing_activity))
 
     # Добавляем роутер в диспетчер
     dp.include_router(router)
@@ -941,6 +800,106 @@ async def profile_back_handler(callback_query: CallbackQuery):
     except Exception as e:
         logger.error(f"Ошибка в profile_back_handler: {e}")
         await callback_query.answer("❌ Ошибка возврата в меню", show_alert=True)
+
+# Обработчики состояний профиля
+async def process_new_weight(message: Message, state: FSMContext):
+    try:
+        new_weight = float(message.text)
+        if new_weight < 30 or new_weight > 300:
+            raise ValueError
+        user_id = message.from_user.id
+        
+        user = get_user(user_id)
+        tdee = calculate_tdee(
+            weight=new_weight,
+            height=user['height'],
+            age=user['age'],
+            activity_level=user['activity_level'],
+            sex=user['gender']
+        )
+        new_calories = get_goal_calories(tdee, user['goal'])
+        macros = calculate_macronutrients(new_calories, new_weight, user['goal'])
+        
+        update_user(
+            user_id,
+            weight=new_weight,
+            goal_calories=new_calories,
+            protein=macros['protein'],
+            fat=macros['fat'],
+            carbs=macros['carbs']
+        )
+        await message.answer("✔️ Вес успешно обновлен!")
+        await show_profile(message)
+    except ValueError:
+        await message.answer("❌ Введите корректный вес (30-300 кг)")
+    
+    await state.clear()
+
+async def process_new_goal(message: Message, state: FSMContext):
+    valid_goals = ["🔻 Похудение", "🔺 Набор веса", "🔄 Поддержание текущего веса"]
+    if message.text not in valid_goals:
+        await message.answer("❌ Выберите цель из предложенных вариантов")
+        return
+    
+    user_id = message.from_user.id
+    user = get_user(user_id)
+    
+    # Пересчет калорий
+    tdee = calculate_tdee(
+        weight=user['weight'],
+        height=user['height'],
+        age=user['age'],
+        activity_level=user['activity_level'],
+        sex=user['gender']
+    )
+    new_calories = get_goal_calories(tdee, message.text)
+    macros = calculate_macronutrients(new_calories, user['weight'], message.text)
+    
+    update_user(
+        user_id, 
+        goal=message.text,
+        goal_calories=new_calories,
+        protein=macros['protein'],
+        fat=macros['fat'],
+        carbs=macros['carbs']
+    )
+    
+    await message.answer("✔️ Цель успешно обновлена!")
+    await show_profile(message)
+    await state.clear()
+
+async def process_new_activity(message: Message, state: FSMContext):
+    valid_activities = list(ACTIVITY_LEVELS.keys())
+    if message.text not in valid_activities:
+        await message.answer("❌ Выберите уровень активности из предложенных")
+        return
+    
+    user_id = message.from_user.id
+    user = get_user(user_id)
+    
+    # Пересчет калорий с новой активностью
+    tdee = calculate_tdee(
+        weight=user['weight'],
+        height=user['height'],
+        age=user['age'],
+        activity_level=message.text,
+        sex=user['gender']
+    )
+    new_calories = get_goal_calories(tdee, user['goal'])
+    macros = calculate_macronutrients(new_calories, user['weight'], user['goal'])
+    
+    update_user(
+        user_id,
+        activity_level=message.text,
+        goal_calories=new_calories,
+        protein=macros['protein'],
+        fat=macros['fat'],
+        carbs=macros['carbs']
+    )
+    
+    await message.answer("✔️ Уровень активности обновлен!")
+    await show_profile(message)
+    await state.clear()
 
 
 async def set_water_goal(callback_query: CallbackQuery, state: FSMContext):
