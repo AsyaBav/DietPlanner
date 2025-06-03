@@ -157,11 +157,15 @@ def register_handlers(dp):
 
     # Обработчики основного меню
     router.message.register(show_profile, F.text == "👤 Профиль")
-    router.message.register(show_diary, F.text == "📝 Мой дневник")
-    router.message.register(show_meal_planner, F.text == "🍽 Рацион на день")
-    router.message.register(show_recipes_menu, F.text == "🔄 Рецепты")
-    router.message.register(show_profile, F.text == "👤 Профиль")
-    router.message.register(show_statistics, F.text == "📈 Моя статистика")
+    router.message.register(show_diary, F.text == "📖 Мой дневник")
+    router.message.register(show_meal_planner, F.text == "🍽 Рацион")
+    router.message.register(show_recipes_menu, F.text == "🍳 Рецепты")
+    router.message.register(water_tracker, F.text == "💧 Трекер воды")
+    router.message.register(show_statistics, F.text == "📊 Статистика")
+    router.message.register(show_consultation, F.text == "🩺 Консультация с диетологом")
+    router.message.register(show_shopping_cart, F.text == "🛒 Продуктовая корзина")
+    router.message.register(show_articles, F.text == "📚 Статьи")
+    router.message.register(show_reports, F.text == "📈 Отчет")
 
     # Колбэки
     router.callback_query.register(handle_diary_callback)
@@ -922,11 +926,6 @@ async def show_recipes_menu(message: Message):
         "🍴 Меню рецептов\n\nЗдесь ты можешь найти, сохранить или создать новые рецепты.",
         reply_markup=create_recipes_keyboard()
     )
-
-async def show_recipes(message: Message):
-    """Показывает раздел рецептов."""
-    await message.answer("🔧 Раздел рецептов в разработке!")
-
 
 async def show_consultation(message: Message):
     """Показывает раздел консультации с диетологом."""
