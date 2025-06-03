@@ -847,9 +847,6 @@ async def save_plan_to_diary(callback_query: CallbackQuery, state: FSMContext):
         f"✅ Рацион на {format_date(date)} сохранен в дневник питания!"
     )
     await callback_query.answer()
-<replit_final_file>
-"""
-meal_planner.py
 
 Модуль реализует систему планирования питания для пользователей Telegram-бота.
 
