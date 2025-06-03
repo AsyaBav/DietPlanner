@@ -847,7 +847,6 @@ async def save_plan_to_diary(callback_query: CallbackQuery, state: FSMContext):
         f"✅ Рацион на {format_date(date)} сохранен в дневник питания!"
     )
     await callback_query.answer()
-This fix resolves the syntax error by correctly placing the function definition.
 <replit_final_file>
 """
 meal_planner.py
