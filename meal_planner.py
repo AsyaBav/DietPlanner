@@ -572,11 +572,11 @@ async def generate_daily_meal_plan(callback_query: CallbackQuery, state: FSMCont
     user = get_user(user_id)
 
     if not user:
-        await callback_query.message.answer("Сначала нужно зарегистрироваться.")
+        await callback_query.message.edit_text("Сначала нужно зарегистрироваться.")
         await callback_query.answer()
         return
 
-    await callback_query.message.answer("🔄 Генерирую рацион на сегодня...")
+    await callback_query.message.edit_text("🔄 Генерирую рацион на сегодня...")
 
     # Получаем цель по калориям и макронутриентам
     goal_calories = user['goal_calories']
@@ -594,9 +594,10 @@ async def generate_daily_meal_plan(callback_query: CallbackQuery, state: FSMCont
     recipes = get_saved_recipes(user_id)
 
     if not recipes:
-        await callback_query.message.answer(
+        await callback_query.message.edit_text(
             "У вас пока нет сохраненных рецептов для генерации рациона. "
-            "Сначала добавьте рецепты в разделе 'Рецепты'."
+            "Сначала добавьте рецепты в разделе 'Рецепты'.\n\n"
+            "Для возврата в меню используйте /start"
         )
         await callback_query.answer()
         return
@@ -634,6 +635,7 @@ async def generate_daily_meal_plan(callback_query: CallbackQuery, state: FSMCont
 
     # Показываем сгенерированный план
     await show_generated_daily_plan(callback_query, state, generated_plan, today)
+    await callback_query.answer()
 
 
 async def show_generated_daily_plan(callback_query: CallbackQuery, state: FSMContext, plan, date):
@@ -688,7 +690,7 @@ async def show_generated_daily_plan(callback_query: CallbackQuery, state: FSMCon
         types.InlineKeyboardButton(text="◀️ Назад", callback_data="meal_plan:back")
     ])
 
-    await callback_query.message.answer(
+    await callback_query.message.edit_text(
         message_text,
         parse_mode="HTML",
         reply_markup=types.InlineKeyboardMarkup(inline_keyboard=keyboard)
