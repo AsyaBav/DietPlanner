@@ -601,10 +601,14 @@ async def generate_daily_meal_plan(callback_query: CallbackQuery, state: FSMCont
         recipes = get_saved_recipes(user_id)
 
         if not recipes:
+            keyboard = [
+                [types.InlineKeyboardButton(text="🍳 Перейти к рецептам", callback_data="recipe:search")],
+                [types.InlineKeyboardButton(text="◀️ Назад", callback_data="meal_plan:back")]
+            ]
             await callback_query.message.edit_text(
                 "У вас пока нет сохраненных рецептов для генерации рациона.\n\n"
-                "Сначала добавьте рецепты в разделе 'Рецепты'.\n\n"
-                "Для возврата в меню используйте /start"
+                "Сначала добавьте рецепты в разделе 'Рецепты'.",
+                reply_markup=types.InlineKeyboardMarkup(inline_keyboard=keyboard)
             )
             await callback_query.answer()
             return
@@ -645,8 +649,13 @@ async def generate_daily_meal_plan(callback_query: CallbackQuery, state: FSMCont
         
     except Exception as e:
         logger.error(f"Ошибка при генерации рациона: {e}")
+        keyboard = [
+            [types.InlineKeyboardButton(text="🔄 Попробовать снова", callback_data="meal_plan:today")],
+            [types.InlineKeyboardButton(text="◀️ Назад", callback_data="meal_plan:back")]
+        ]
         await callback_query.message.edit_text(
-            "❌ Произошла ошибка при генерации рациона. Попробуйте еще раз."
+            "❌ Произошла ошибка при генерации рациона. Попробуйте еще раз.",
+            reply_markup=types.InlineKeyboardMarkup(inline_keyboard=keyboard)
         )
     
     await callback_query.answer()
@@ -836,5 +845,62 @@ async def confirm_replace_dish(callback_query: CallbackQuery, state: FSMContext)
         await show_daily_plan(callback_query.message, state, date)
     else:
         await callback_query.message.answer("❌ Ошибка при замене блюда")
+
+    await callback_query.answer()
+
+
+async def save_whole_plan_to_diary(callback_query: CallbackQuery, state: FSMContext):
+    """Сохраняет весь сгенерированный рацион в дневник."""
+    date = callback_query.data.split(':')[1]
+    user_id = callback_query.from_user.id
+
+    # Получаем план питания на указанную дату
+    daily_plan = get_daily_meal_plan(user_id, date)
+
+    if not daily_plan:
+        await callback_query.message.answer("План питания на этот день пуст.")
+        await callback_query.answer()
+        return
+
+    try:
+        # Переносим каждое блюдо в дневник
+        for entry in daily_plan:
+            # Получаем детали рецепта
+            recipe = get_recipe_details(entry.get('recipe_id'))
+
+            if recipe:
+                # Добавляем запись в дневник питания
+                add_food_entry(
+                    user_id,
+                    date,
+                    entry['meal_type'],
+                    recipe['name'],
+                    recipe['calories'],
+                    recipe['protein'],
+                    recipe['fat'],
+                    recipe['carbs']
+                )
+
+        await callback_query.message.answer(
+            f"✅ Весь рацион на {format_date(date)} успешно сохранен в дневник!"
+        )
+        
+        # Показываем кнопку для перехода к дневнику
+        keyboard = [
+            [types.InlineKeyboardButton(text="📖 Перейти к дневнику", callback_data="return_to_diary")],
+            [types.InlineKeyboardButton(text="🔄 Сгенерировать новый рацион", callback_data="meal_plan:today")],
+            [types.InlineKeyboardButton(text="◀️ Главное меню", callback_data="meal_plan:back")]
+        ]
+        
+        await callback_query.message.answer(
+            "Что вы хотите сделать дальше?",
+            reply_markup=types.InlineKeyboardMarkup(inline_keyboard=keyboard)
+        )
+        
+    except Exception as e:
+        logger.error(f"Ошибка при сохранении рациона в дневник: {e}")
+        await callback_query.message.answer(
+            "❌ Произошла ошибка при сохранении рациона в дневник."
+        )
 
     await callback_query.answer()
