@@ -10,3 +10,15 @@ run = ["sh", "-c", "python main.py"]
 
 [[ports]]
 localPort = 8080
+
+[workflows]
+runButton = "Run Bot"
+
+[[workflows.workflow]]
+name = "Run Bot"
+author = 42678294
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python main.py"

@@ -23,6 +23,7 @@ meal_planner.py
 
 import logging
 import asyncio
+import random
 from datetime import datetime, timedelta
 from aiogram import types
 from aiogram.fsm.context import FSMContext
@@ -348,9 +349,12 @@ async def delete_plan_entry(callback_query: CallbackQuery, state: FSMContext):
     success = remove_from_meal_plan(plan_id)
 
     if success:
-        await callback_query.message.answer("✅ Блюдо удалено из плана питания!")
+        # Редактируем текущее сообщение вместо отправки нового
+        await callback_query.message.edit_text("✅ Блюдо удалено из плана питания!")
+        # Небольшая задержка перед показом обновленного плана
+        await asyncio.sleep(1)
     else:
-        await callback_query.message.answer("❌ Не удалось удалить блюдо. Попробуйте еще раз.")
+        await callback_query.message.edit_text("❌ Не удалось удалить блюдо. Попробуйте еще раз.")
 
     # Возвращаемся к просмотру плана
     user_data = await state.get_data()
@@ -527,10 +531,6 @@ async def return_to_plan_view(callback_query: CallbackQuery, state: FSMContext):
 
     await show_daily_plan(callback_query.message, state, selected_date)
     await callback_query.answer()
-
-
-# Добавим импорт random для генерации плана
-import random
 
 
 

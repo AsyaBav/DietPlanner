@@ -1,29 +1,20 @@
+
 import logging
 import os
 from flask import Flask, render_template, jsonify
 import time
-
-
-
-
-
+import asyncio
+import threading
 
 # Импорт модулей бота
-from run_bot import start_bot_thread
+from run_bot import start_bot
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-
-
 # Создаем Flask приложение
 app = Flask(__name__)
-
-# Запуск бота в отдельном потоке
-bot_thread = None
-
-
 
 @app.route('/')
 def index():
@@ -44,19 +35,20 @@ def status():
         ]
     })
 
+def run_flask():
+    """Запускает Flask в отдельном потоке"""
+    app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
 
 # Запуск приложения
 if __name__ == "__main__":
-    # Запускаем бота вместе с Flask приложением
-    bot_thread = start_bot_thread()
-    # Используем другой порт, чтобы избежать конфликта с Gunicorn
-    app.run(host='0.0.0.0', port=8080, debug=False)
-else:
-    # В случае запуска через WSGI (gunicorn), инициализируем бот сразу
-    # Небольшая задержка для уверенности, что Flask полностью инициализирован
-    logger.info("Starting Telegram bot in a separate thread...")
-    bot_thread = start_bot_thread()
-    logger.info("Bot thread started")
-
-    # Running the Flask app
-    app.run(host='0.0.0.0', port=5000)
+    # Запускаем Flask в отдельном потоке
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+    
+    logger.info("Flask приложение запущено на порту 5000")
+    
+    # Запускаем бота в основном потоке
+    try:
+        asyncio.run(start_bot())
+    except KeyboardInterrupt:
+        logger.info("Приложение остановлено")

@@ -307,6 +307,19 @@ def register_handlers(dp):
     router.callback_query.register(transfer_plan_to_diary, F.data == "plan:to_diary")
     router.callback_query.register(clear_plan, F.data == "plan:clear")
     router.callback_query.register(return_to_main_menu, F.data == "plan:back")
+    
+    # Добавляем недостающие обработчики планировщика
+    from meal_planner import (
+        delete_plan_entry, confirm_clear_plan, cancel_clear_plan,
+        transfer_plan_to_diary, generate_meal_plan, return_to_plan_view
+    )
+    
+    router.callback_query.register(delete_plan_entry, F.data.startswith("delete_plan_entry:"))
+    router.callback_query.register(confirm_clear_plan, F.data.startswith("confirm_clear_plan:"))
+    router.callback_query.register(cancel_clear_plan, F.data == "cancel_clear_plan")
+    router.callback_query.register(transfer_plan_to_diary, F.data == "plan:to_diary")
+    router.callback_query.register(generate_meal_plan, F.data == "plan:generate")
+    router.callback_query.register(return_to_plan_view, F.data == "return_to_plan_view")
 
     #router.callback_query.register(handle_recipes_callback, F.data.startswith("recipe:"))
     #router.callback_query.register(view_recipe_details, F.data.startswith("view_recipe:"))
