@@ -550,20 +550,27 @@ async def return_to_plan_view(callback_query: CallbackQuery, state: FSMContext):
 # Выносим эти функции на уровень модуля
 async def handle_meal_plan_menu(callback_query: CallbackQuery, state: FSMContext):
     """Обрабатывает выбор в меню рациона."""
-    action = callback_query.data.split(':')[1]
+    try:
+        action = callback_query.data.split(':')[1]
 
-    if action == "today":
-        await generate_daily_meal_plan(callback_query, state)
-    elif action == "week":
-        await generate_weekly_meal_plan(callback_query, state)
-    elif action == "back":
-        from keyboards import after_calories_keyboard
-        await callback_query.message.delete()
-        await callback_query.message.answer(
-            "Вы вернулись в главное меню",
-            reply_markup=after_calories_keyboard
-        )
-    await callback_query.answer()
+        if action == "today":
+            await generate_daily_meal_plan(callback_query, state)
+        elif action == "week":
+            await generate_weekly_meal_plan(callback_query, state)
+        elif action == "back":
+            from keyboards import after_calories_keyboard
+            try:
+                await callback_query.message.delete()
+            except:
+                pass  # Игнорируем ошибки удаления сообщения
+            await callback_query.message.answer(
+                "Вы вернулись в главное меню",
+                reply_markup=after_calories_keyboard
+            )
+        await callback_query.answer()
+    except Exception as e:
+        logger.error(f"Ошибка в handle_meal_plan_menu: {e}")
+        await callback_query.answer("❌ Произошла ошибка")
 
 
 async def generate_daily_meal_plan(callback_query: CallbackQuery, state: FSMContext):

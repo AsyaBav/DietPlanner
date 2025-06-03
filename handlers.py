@@ -31,7 +31,8 @@ from meal_planner import (
     handle_meal_type_selection, handle_recipe_selection, view_meal_type_plan,
     delete_plan_entry, clear_plan, confirm_clear_plan, cancel_clear_plan,
     transfer_plan_to_diary, generate_meal_plan, return_to_plan_view,
-    handle_meal_plan_menu, handle_replace_dish, confirm_replace_dish
+    handle_meal_plan_menu, handle_replace_dish, confirm_replace_dish,
+    generate_daily_meal_plan, generate_weekly_meal_plan
 )
 from recipe_generator import (
     show_recipes_menu, handle_recipes_callback, view_recipe_details,
@@ -168,6 +169,9 @@ def register_handlers(dp):
     router.message.register(show_articles, F.text == "📚 Статьи")
     router.message.register(show_reports, F.text == "📈 Отчет")
 
+    # Обработчики callback для рациона - ВАЖНО: должны быть ПЕРЕД другими обработчиками
+    router.callback_query.register(handle_meal_plan_menu, F.data.startswith("meal_plan:"))
+
     # Колбэки
     router.callback_query.register(handle_diary_callback)
     router.callback_query.register(handle_food_selection, F.data.startswith("select_food:"))
@@ -195,8 +199,7 @@ def register_handlers(dp):
     router.callback_query.register(generate_meal_plan, F.data == "plan:generate")
     router.callback_query.register(return_to_plan_view, F.data == "return_to_plan_view")
 
-    # Регистрируем новые обработчики для рациона
-    router.callback_query.register(handle_meal_plan_menu, F.data.startswith("meal_plan:"))
+    # Обработчики для рациона - дополнительные
     router.callback_query.register(handle_replace_dish, F.data.startswith("replace_dish:"))
     router.callback_query.register(confirm_replace_dish, F.data.startswith("confirm_replace:"))
     router.callback_query.register(transfer_plan_to_diary, F.data.startswith("save_plan_to_diary:"))
