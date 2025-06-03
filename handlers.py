@@ -31,7 +31,7 @@ from meal_planner import (
     handle_meal_type_selection, handle_recipe_selection, view_meal_type_plan,
     delete_plan_entry, clear_plan, confirm_clear_plan, cancel_clear_plan,
     transfer_plan_to_diary, generate_meal_plan, return_to_plan_view,
-    handle_meal_plan_menu, handle_replace_dish, confirm_replace_dish, save_plan_to_diary
+    handle_meal_plan_menu, handle_replace_dish, confirm_replace_dish
 )
 from recipe_generator import (
     show_recipes_menu, handle_recipes_callback, view_recipe_details,
@@ -199,7 +199,7 @@ def register_handlers(dp):
     router.callback_query.register(handle_meal_plan_menu, F.data.startswith("meal_plan:"))
     router.callback_query.register(handle_replace_dish, F.data.startswith("replace_dish:"))
     router.callback_query.register(confirm_replace_dish, F.data.startswith("confirm_replace:"))
-    router.callback_query.register(save_plan_to_diary, F.data.startswith("save_plan_to_diary:"))
+    router.callback_query.register(transfer_plan_to_diary, F.data.startswith("save_plan_to_diary:"))
 
     router.callback_query.register(toggle_recipe_favorite_status, F.data.startswith("toggle_favorite:"))
     router.callback_query.register(delete_recipe_handler, F.data.startswith("delete_recipe:"))
