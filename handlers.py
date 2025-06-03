@@ -182,7 +182,17 @@ def register_handlers(dp):
     router.callback_query.register(cancel_clear_diary, F.data == "cancel_clear")
     router.callback_query.register(handle_recent_food_selection, F.data.startswith("recent_food:"))
     router.callback_query.register(return_to_meal_selection, F.data == "return_to_meal_selection")
-    router.callback_query.register(show_diary, F.data == "return_to_diary")
+    
+    # Обработчик возврата к дневнику из meal_planner
+    @router.callback_query(F.data == "return_to_diary")
+    async def return_to_diary_handler(callback_query: CallbackQuery, state: FSMContext):
+        """Возвращает к дневнику из рациона."""
+        try:
+            await callback_query.message.delete()
+        except:
+            pass
+        await show_diary(callback_query.message, state)
+        await callback_query.answer()
 
 
     router.callback_query.register(handle_plan_date_selection, F.data.startswith("plan_date:"))
@@ -204,7 +214,7 @@ def register_handlers(dp):
     router.callback_query.register(confirm_replace_dish, F.data.startswith("confirm_replace:"))
     router.callback_query.register(transfer_plan_to_diary, F.data.startswith("save_plan_to_diary:"))
     
-    # Импортируем новую функцию
+    # Импортируем новые функции
     from meal_planner import save_whole_plan_to_diary, show_plan_for_date
     router.callback_query.register(save_whole_plan_to_diary, F.data.startswith("save_plan_to_diary:"))
     router.callback_query.register(show_plan_for_date, F.data.startswith("show_plan:"))

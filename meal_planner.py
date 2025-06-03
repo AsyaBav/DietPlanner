@@ -1059,26 +1059,27 @@ async def confirm_replace_dish(callback_query: CallbackQuery, state: FSMContext)
 
 async def save_whole_plan_to_diary(callback_query: CallbackQuery, state: FSMContext):
     """Сохраняет весь сгенерированный рацион в дневник."""
-    date = callback_query.data.split(':')[1]
-    user_id = callback_query.from_user.id
-
-    # Получаем план питания на указанную дату
-    daily_plan = get_daily_meal_plan(user_id, date)
-
-    if not daily_plan:
-        await callback_query.message.answer("План питания на этот день пуст.")
-        await callback_query.answer()
-        return
-
     try:
+        date = callback_query.data.split(':')[1]
+        user_id = callback_query.from_user.id
+
+        # Получаем план питания на указанную дату
+        daily_plan = get_daily_meal_plan(user_id, date)
+
+        if not daily_plan:
+            await callback_query.message.edit_text("План питания на этот день пуст.")
+            await callback_query.answer()
+            return
+
         # Переносим каждое блюдо в дневник
+        added_count = 0
         for entry in daily_plan:
             # Получаем детали рецепта
             recipe = get_recipe_details(entry.get('recipe_id'))
 
             if recipe:
                 # Добавляем запись в дневник питания
-                add_food_entry(
+                success = add_food_entry(
                     user_id,
                     date,
                     entry['meal_type'],
@@ -1088,26 +1089,34 @@ async def save_whole_plan_to_diary(callback_query: CallbackQuery, state: FSMCont
                     recipe['fat'],
                     recipe['carbs']
                 )
+                if success:
+                    added_count += 1
 
-        await callback_query.message.answer(
-            f"✅ Весь рацион на {format_date(date)} успешно сохранен в дневник!"
-        )
-        
-        # Показываем кнопку для перехода к дневнику
-        keyboard = [
-            [types.InlineKeyboardButton(text="📖 Перейти к дневнику", callback_data="return_to_diary")],
-            [types.InlineKeyboardButton(text="🔄 Сгенерировать новый рацион", callback_data="meal_plan:today")],
-            [types.InlineKeyboardButton(text="◀️ Главное меню", callback_data="meal_plan:back")]
-        ]
-        
-        await callback_query.message.answer(
-            "Что вы хотите сделать дальше?",
-            reply_markup=types.InlineKeyboardMarkup(inline_keyboard=keyboard)
-        )
+        if added_count > 0:
+            await callback_query.message.edit_text(
+                f"✅ Весь рацион на {format_date(date)} успешно сохранен в дневник!\n"
+                f"Добавлено блюд: {added_count}"
+            )
+            
+            # Показываем кнопки для дальнейших действий
+            keyboard = [
+                [types.InlineKeyboardButton(text="📖 Перейти к дневнику", callback_data="return_to_diary")],
+                [types.InlineKeyboardButton(text="🔄 Сгенерировать новый рацион", callback_data="meal_plan:today")],
+                [types.InlineKeyboardButton(text="◀️ Главное меню", callback_data="meal_plan:back")]
+            ]
+            
+            await callback_query.message.answer(
+                "Что вы хотите сделать дальше?",
+                reply_markup=types.InlineKeyboardMarkup(inline_keyboard=keyboard)
+            )
+        else:
+            await callback_query.message.edit_text(
+                "❌ Не удалось сохранить блюда в дневник. Проверьте план питания."
+            )
         
     except Exception as e:
         logger.error(f"Ошибка при сохранении рациона в дневник: {e}")
-        await callback_query.message.answer(
+        await callback_query.message.edit_text(
             "❌ Произошла ошибка при сохранении рациона в дневник."
         )
 
@@ -1116,11 +1125,23 @@ async def save_whole_plan_to_diary(callback_query: CallbackQuery, state: FSMCont
 
 async def show_plan_for_date(callback_query: CallbackQuery, state: FSMContext):
     """Показывает план питания для указанной даты."""
-    date = callback_query.data.split(':')[1]
-    
-    # Сохраняем дату в состояние
-    await state.update_data(selected_date=date)
-    
-    # Показываем план питания
-    await show_daily_plan(callback_query.message, state, date)
+    try:
+        date = callback_query.data.split(':')[1]
+        
+        # Сохраняем дату в состояние
+        await state.update_data(selected_date=date)
+        
+        # Удаляем текущее сообщение и показываем план питания
+        try:
+            await callback_query.message.delete()
+        except:
+            pass  # Игнорируем ошибки удаления
+            
+        await show_daily_plan(callback_query.message, state, date)
+        
+    except Exception as e:
+        logger.error(f"Ошибка при показе плана: {e}")
+        await callback_query.answer("❌ Ошибка при показе плана")
+        return
+        
     await callback_query.answer()
