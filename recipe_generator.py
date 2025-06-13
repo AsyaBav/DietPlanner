@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import random
-import os
 from aiogram import types, F, Dispatcher
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
@@ -69,6 +68,16 @@ async def handle_recipes_callback(callback_query: CallbackQuery, state: FSMConte
     await callback_query.answer()
 
 
+'''async def search_recipes(callback_query: CallbackQuery, state: FSMContext):
+    """Запрашиваем текст для поиска"""
+    await callback_query.message.edit_text(
+        "🔍 Введите название или ингредиенты для поиска:",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="recipe:back")]
+        ]))
+    await state.set_state(RecipeStates.searching)
+    await callback_query.answer()'''
+
 
 async def search_recipes(callback_query: CallbackQuery, state: FSMContext):
     """Запрашиваем текст для поиска"""
@@ -81,6 +90,7 @@ async def search_recipes(callback_query: CallbackQuery, state: FSMContext):
     await callback_query.answer()
 
 
+# @router.message(RecipeStates.searching)
 async def process_search_query(message: Message, state: FSMContext):
     """Обрабатываем поисковый запрос"""
     search_query = message.text.strip()
@@ -88,7 +98,7 @@ async def process_search_query(message: Message, state: FSMContext):
         await message.answer("Пожалуйста, введите поисковый запрос")
         return
 
-    search_query = ' '.join(search_query.lower().split())
+    search_query = ' '.join(search_query.split())
 
     user_id = message.from_user.id
     from database import search_recipes
@@ -200,44 +210,7 @@ async def handle_search_page(callback_query: CallbackQuery, state: FSMContext):
     await show_search_results(callback_query, state, page)
 
 
-async def view_recipe_card(callback_query: CallbackQuery, state: FSMContext):
-    """Показывает детали рецепта с фото."""
-    try:
-        recipe_id = int(callback_query.data.split(':')[1])
-        recipe = get_recipe_details(recipe_id)
-
-        if not recipe:
-            await callback_query.answer("Рецепт не найден")
-            return
-
-        # Формируем сообщение
-        message_text = (
-            f"🍳 {recipe['name']}\n\n"
-            f"Ингредиенты:\n{recipe['ingredients']}\n\n"
-            f"Способ приготовления:\n{recipe['instructions']}\n\n"
-            f"Пищевая ценность:\n"
-            f"• Калории: {recipe['calories']} ккал\n"
-            f"• Белки: {recipe['protein']} г\n"
-            f"• Жиры: {recipe['fat']} г\n"
-            f"• Углеводы: {recipe['carbs']} г"
-        )
-
-        # Если есть фото - отправляем с фото
-        if recipe.get('photo_path') and os.path.exists(recipe['photo_path']):
-            with open(recipe['photo_path'], 'rb') as photo:
-                await callback_query.message.answer_photo(
-                    photo=photo,
-                    caption=message_text
-                )
-        else:
-            await callback_query.message.answer(message_text)
-
-        await callback_query.answer()
-    except Exception as e:
-        logger.error(f"Ошибка просмотра рецепта: {e}", exc_info=True)
-        await callback_query.answer("Ошибка при загрузке рецепта")
-
-'''async def view_recipe_card(callback_query: CallbackQuery, recipe_id: int):
+async def view_recipe_card(callback_query: CallbackQuery, recipe_id: int):
     """Показываем карточку рецепта"""
     recipe = get_recipe_details(recipe_id)
     if not recipe:
@@ -264,40 +237,23 @@ async def view_recipe_card(callback_query: CallbackQuery, state: FSMContext):
         ],
         [InlineKeyboardButton(text="◀️ Назад", callback_data="back_to_search")]
     ]
-    reply_markup = InlineKeyboardMarkup(inline_keyboard=keyboard)
 
-    try:
-        # Удаляем предыдущее сообщение (если есть)
-        await callback_query.message.delete()
-    except:
-        pass  # Игнорируем ошибки удаления
-    # Если есть фото
+    # Если есть фото (добавьте поле photo_path в таблицу recipes)
     if recipe.get('photo_path'):
-        try:
-            # Пытаемся отправить фото
-            with open(recipe['photo_path'], 'rb') as photo_file:
-                await callback_query.message.answer_photo(
-                    photo=photo_file,
-                    caption=text,
-                    parse_mode="HTML",
-                    reply_markup=reply_markup
-                )
-        except Exception as e:
-            logger.error(f"Ошибка загрузки фото: {e}")
-            # Если фото не загрузилось, отправляем текст
-            await callback_query.message.answer(
-                text,
-                parse_mode="HTML",
-                reply_markup=reply_markup
-            )
+        await callback_query.message.answer_photo(
+            photo=recipe['photo_path'],
+            caption=text,
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
+        )
     else:
-        await callback_query.message.answer(
+        await callback_query.message.edit_text(
             text,
             parse_mode="HTML",
-            reply_markup=reply_markup
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard)
         )
 
-    await callback_query.answer()'''
+    await callback_query.answer()
 
 
 async def show_favorites(callback_query: CallbackQuery, state: FSMContext):
@@ -305,6 +261,12 @@ async def show_favorites(callback_query: CallbackQuery, state: FSMContext):
     from database import get_saved_recipes
     favorites = get_saved_recipes(user_id, is_favorite=True)  # Функция из database.py
 
+    '''if not favorites:
+        text = "У вас пока нет избранных рецептов."
+    else:
+        text = "⭐ Ваши избранные рецепты:\n\n"
+        for recipe in favorites:
+            text += f"- {recipe['name']} ({recipe['calories']} ккал)\n"'''
 
     if not favorites:
         await callback_query.message.edit_text(
@@ -321,6 +283,12 @@ async def show_favorites(callback_query: CallbackQuery, state: FSMContext):
     # Формируем сообщение с пагинацией
     await show_favorites_page(callback_query, state)
 
+    '''await callback_query.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="◀️ Назад", callback_data="recipes:back")]
+        ])
+    )'''
 
 
 async def show_favorites_page(callback_query: CallbackQuery, state: FSMContext, page=0):
@@ -380,6 +348,18 @@ async def show_favorites_page(callback_query: CallbackQuery, state: FSMContext, 
         text,
         reply_markup=InlineKeyboardMarkup(inline_keyboard=keyboard))
     await callback_query.answer()
+
+
+
+async def start_recipe_creation(callback_query: CallbackQuery, state: FSMContext):
+    """Начинает процесс создания рецепта."""
+    await state.clear()
+
+    await callback_query.message.answer(
+        "Давайте создадим новый рецепт! Введите название рецепта:"
+    )
+    await state.set_state(RecipeStates.entering_name)
+
 
 
 async def view_favorite_recipe(callback_query: CallbackQuery, state: FSMContext):
@@ -641,6 +621,7 @@ async def start_recipe_creation(callback_query: CallbackQuery, state: FSMContext
     )
 
     await state.set_state(RecipeStates.entering_name)
+    await callback_query.answer()
 
 
 async def process_recipe_name(message: types.Message, state: FSMContext):
@@ -656,6 +637,7 @@ async def process_recipe_name(message: types.Message, state: FSMContext):
     await message.answer(
         "Отлично! Теперь введите список ингредиентов с граммовками:"
     )
+
     await state.set_state(RecipeStates.entering_ingredients)
 
 
@@ -676,7 +658,7 @@ async def process_recipe_ingredients(message: types.Message, state: FSMContext):
     await state.set_state(RecipeStates.entering_instructions)
 
 
-async def process_recipe_instructions(message: Message, state: FSMContext):
+async def process_recipe_instructions(message: types.Message, state: FSMContext):
     """Обрабатывает ввод инструкций рецепта."""
     instructions = message.text.strip()
 
@@ -689,200 +671,168 @@ async def process_recipe_instructions(message: Message, state: FSMContext):
     await message.answer("Введите количество калорий:")
     await state.set_state(RecipeStates.entering_calories)
 
+    '''from database import save_recipe
 
-
-
-async def process_recipe_calories(message: Message, state: FSMContext):
-    try:
-        calories = float(message.text.strip())
-        await state.update_data(calories=calories)
-
-        await message.answer("Теперь введите количество белков (г):")
-        await state.set_state(RecipeStates.entering_protein)
-    except ValueError:
-        await message.answer("Пожалуйста, введите корректное число для калорий.")
-
-    router = Router()
-
-    @router.message(RecipeStates.waiting_for_name)
-    async def process_recipe_name(message: Message, state: FSMContext):
-        await state.update_data(name=message.text)
-        await message.answer("Введите ингредиенты (через запятую):")
-        await state.set_state(RecipeStates.waiting_for_ingredients)
-
-    @router.message(RecipeStates.waiting_for_ingredients)
-    async def process_recipe_ingredients(message: Message, state: FSMContext):
-        await state.update_data(ingredients=message.text)
-        await message.answer("Введите инструкции приготовления:")
-        await state.set_state(RecipeStates.waiting_for_instructions)
-
-    @router.message(RecipeStates.waiting_for_instructions)
-    async def process_recipe_instructions(message: Message, state: FSMContext):
-        await state.update_data(instructions=message.text)
-        data = await state.get_data()
-        # Сохраняем рецепт в базу данных
-        from database import save_recipe
-
-        recipe_id = save_recipe(
-            user_id=message.from_user.id,
-            name=data['name'],
-            ingredients=data['ingredients'],
-            instructions=message.text,
-            calories=0,  # Временные значения
-            protein=0,
-            fat=0,
-            carbs=0
-        )
-        if recipe_id:
-            await message.answer("✅ Рецепт успешно сохранен!")
-            await show_recipes_menu(message)
-        else:
-            await message.answer("❌ Ошибка при сохранении рецепта")
-
-        await state.clear()
-
-    @router.callback_query(F.data == "back_to_search")
-    async def back_to_search_handler(callback_query: CallbackQuery, state: FSMContext):
-        """Возвращает к результатам поиска"""
-        try:
-            data = await state.get_data()
-            if 'search_results' in data:
-                from recipe_generator import show_search_results  # Добавляем импорт
-                await show_search_results(callback_query, state, data.get('current_page', 0))
-            else:
-                from recipe_generator import show_recipes_menu  # Добавляем импорт
-                await show_recipes_menu(callback_query.message, state)
-            await callback_query.answer()
-        except Exception as e:
-            logger.error(f"Ошибка в back_to_search_handler: {e}")
-            await callback_query.answer("❌ Ошибка возврата к поиску")
-
-
-async def process_recipe_protein(message: Message, state: FSMContext):
-    try:
-        protein = float(message.text.strip())
-        await state.update_data(protein=protein)
-
-        await message.answer("Теперь введите количество жиров (г):")
-        await state.set_state(RecipeStates.entering_fat)
-    except ValueError:
-        await message.answer("Пожалуйста, введите корректное число для белков.")
-
-
-
-
-async def process_recipe_fat(message: Message, state: FSMContext):
-    try:
-        fat = float(message.text.strip())
-        await state.update_data(fat=fat)
-
-        await message.answer("Теперь введите количество углеводов (г):")
-        await state.set_state(RecipeStates.entering_carbs)
-    except ValueError:
-        await message.answer("Пожалуйста, введите корректное число для жиров.")
-
-
-
-async def process_recipe_carbs(message: Message, state: FSMContext):
-    try:
-        carbs = float(message.text.strip())
-        await state.update_data(carbs=carbs)
-
-        # Запрос фото
-        await message.answer(
-            "Теперь вы можете добавить фото блюда. Отправьте фото или напишите 'пропустить':"
-        )
-        await state.set_state(RecipeStates.entering_photo)
-    except ValueError:
-        await message.answer("Пожалуйста, введите корректное число для углеводов.")
-
-
-async def process_recipe_photo(message: Message, state: FSMContext):
-    """Обрабатывает фото или пропуск."""
-    # Обработка команды "пропустить"
-    if message.text and message.text.lower() == "пропустить":
-        await state.update_data(photo_path=None)
-        await confirm_recipe(message, state)
-        return
-    # Проверка, что сообщение содержит фото
-    if not message.photo:
-        await message.answer("Пожалуйста, отправьте фото или напишите 'пропустить'.")
-        return
-
-    try:
-        # Создаем папку photos, если её нет
-        os.makedirs("photos", exist_ok=True)
-
-        # Получаем фото с наивысшим разрешением
-        photo = message.photo[-1]
-        file_path = f"photos/{photo.file_id}.jpg"
-
-        # Скачиваем фото
-        bot = message.bot
-        await bot.download(photo, destination=file_path)
-
-        # Сохраняем путь к фото
-        await state.update_data(photo_path=file_path)
-        await message.answer("✅ Фото успешно сохранено!")
-
-        # Переходим к подтверждению рецепта
-        await confirm_recipe(message, state)
-
-    except Exception as e:
-        logger.error(f"Ошибка при сохранении фото: {e}")
-        await message.answer("❌ Не удалось сохранить фото. Попробуйте ещё раз или напишите 'пропустить'.")
-
-async def confirm_recipe(message: Message, state: FSMContext):
-    """Подтверждение и сохранение рецепта."""
-    data = await state.get_data()
-
-    confirmation_text = (
-        f"Название: {data['name']}\n"
-        f"Ингредиенты: {data['ingredients']}\n"
-        f"Инструкции: {data['instructions']}\n"
-        f"Калории: {data['calories']} ккал\n"
-        f"Белки: {data['protein']} г\n"
-        f"Жиры: {data['fat']} г\n"
-        f"Углеводы: {data['carbs']} г\n"
+    # Сохраняем рецепт в базу данных
+    recipe_id = save_recipe(
+        user_id=message.from_user.id,
+        name=data['name'],
+        ingredients=data['ingredients'],
+        instructions=message.text,
+        calories=0,
+        protein=0,
+        fat=0,
+        carbs=0
     )
 
-    if data.get('photo_path'):
-        confirmation_text += "Фото добавлено ✅"
+    if recipe_id:
+        await message.answer("✅ Рецепт успешно сохранен!")
     else:
-        confirmation_text += "Фото не добавлено ❌"
+        await message.answer("❌ Ошибка при сохранении рецепта")
 
-    await message.answer(f"Проверьте данные:\n\n{confirmation_text}\n\nВсе верно? (да/нет)")
+    await state.clear()
+    await show_recipes_menu(message, state)'''
+
+
+async def process_recipe_calories(message: types.Message, state: FSMContext):
+    """Обрабатывает ввод калорийности рецепта."""
+    try:
+        calories = float(message.text.strip().replace(',', '.'))
+        if calories <= 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("Пожалуйста, введите корректное положительное число для калорий.")
+        return
+
+    await state.update_data(calories=calories)
+
+    await message.answer(
+        "Теперь введите количество белков (г):"
+    )
+
+    await state.set_state(RecipeStates.entering_protein)
+
+
+async def process_recipe_protein(message: types.Message, state: FSMContext):
+    """Обрабатывает ввод количества белка."""
+    try:
+        protein = float(message.text.strip().replace(',', '.'))
+        if protein < 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("Пожалуйста, введите корректное неотрицательное число для белков.")
+        return
+
+    await state.update_data(protein=protein)
+
+    await message.answer(
+        "Теперь введите количество жиров (г):"
+    )
+
+    await state.set_state(RecipeStates.entering_fat)
+
+
+async def process_recipe_fat(message: types.Message, state: FSMContext):
+    """Обрабатывает ввод количества жиров."""
+    try:
+        fat = float(message.text.strip().replace(',', '.'))
+        if fat < 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("Пожалуйста, введите корректное неотрицательное число для жиров.")
+        return
+
+    await state.update_data(fat=fat)
+
+    await message.answer(
+        "И наконец, введите количество углеводов (г):"
+    )
+
+    await state.set_state(RecipeStates.entering_carbs)
+
+
+async def process_recipe_carbs(message: types.Message, state: FSMContext):
+    """Обрабатывает ввод количества углеводов."""
+    try:
+        carbs = float(message.text.strip().replace(',', '.'))
+        if carbs < 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("Пожалуйста, введите корректное неотрицательное число для углеводов.")
+        return
+
+    await state.update_data(carbs=carbs)
+
+    # Получаем все данные рецепта
+    recipe_data = await state.get_data()
+
+    # Показываем итоговую информацию для подтверждения
+    confirmation_text = (
+        f"<b>Проверьте данные рецепта:</b>\n\n"
+        f"<b>Название:</b> {recipe_data['name']}\n\n"
+        f"<b>Ингредиенты:</b>\n{recipe_data['ingredients']}\n\n"
+        f"<b>Способ приготовления:</b>\n{recipe_data['instructions']}\n\n"
+        f"<b>Пищевая ценность:</b>\n"
+        f"• Калории: {recipe_data['calories']} ккал\n"
+        f"• Белки: {recipe_data['protein']} г\n"
+        f"• Жиры: {recipe_data['fat']} г\n"
+        f"• Углеводы: {recipe_data['carbs']} г\n\n"
+        f"Всё правильно?"
+    )
     await state.set_state(RecipeStates.confirming)
 
+    # Создаем клавиатуру для подтверждения
+    keyboard = create_recipe_confirmation_keyboard()
 
-async def save_recipe_handler(message: Message, state: FSMContext):
-    """Сохраняет рецепт или отменяет операцию."""
-    confirmation = message.text.lower()
+    await message.answer(
+        confirmation_text,
+        parse_mode="HTML",
+        reply_markup=keyboard
+    )
 
-    if confirmation == "да":
+
+
+async def save_recipe_handler(callback_query: CallbackQuery, state: FSMContext):
+    """Сохраняет рецепт в базу данных."""
+    logger.info("Save recipe button pressed")
+    try:
+        # Получаем данные из состояния
         data = await state.get_data()
 
-        # Сохраняем в БД
-        from database import save_recipe
-
-        save_recipe(
-            user_id=message.from_user.id,
+        # Сохраняем рецепт в базу
+        recipe_id = save_recipe(
+            user_id=callback_query.from_user.id,
             name=data['name'],
             ingredients=data['ingredients'],
             instructions=data['instructions'],
-            calories=data['calories'],
-            protein=data['protein'],
-            fat=data['fat'],
-            carbs=data['carbs'],
-            photo_path=data.get('photo_path')
+            calories=data.get('calories', 0),
+            protein=data.get('protein', 0),
+            fat=data.get('fat', 0),
+            carbs=data.get('carbs', 0)
         )
 
-        await message.answer("✅ Рецепт успешно сохранен!")
-    else:
-        await message.answer("Создание рецепта отменено.")
+        if recipe_id:
+            await callback_query.message.answer("✅ Рецепт успешно сохранен!")
+        else:
+            await callback_query.message.answer("❌ Ошибка при сохранении рецепта")
 
+    except Exception as e:
+        logger.error(f"Ошибка при сохранении рецепта: {e}")
+        await callback_query.message.answer("❌ Произошла ошибка при сохранении")
+
+    # Очищаем состояние и возвращаем в меню
     await state.clear()
+    await show_recipes_menu(callback_query.message, state)
+    await callback_query.answer()
 
+
+async def cancel_recipe_creation(callback_query: CallbackQuery, state: FSMContext):
+    """Отменяет создание рецепта."""
+    logger.info("Cancel recipe button pressed")
+    await callback_query.message.answer("❌ Создание рецепта отменено")
+    await state.clear()
+    await show_recipes_menu(callback_query.message, state)
+    await callback_query.answer()
 
 
 async def cancel_recipe_creation(callback_query: CallbackQuery, state: FSMContext):
@@ -897,18 +847,8 @@ async def cancel_recipe_creation(callback_query: CallbackQuery, state: FSMContex
 
 async def generate_recipe(callback_query: CallbackQuery, state: FSMContext):
     """Генерирует рецепт на основе цели пользователя."""
-    user_id = callback_query.from_user.id
-    user = get_user(user_id)
-
-    if not user or not user.get('goal'):
-        await callback_query.message.answer(
-            "Сначала нужно завершить регистрацию и указать цель."
-        )
-        await callback_query.answer()
-        return
-
-    goal = user['goal']
-
+    await callback_query.message.answer("🔧 Генерация рецепта в разработке!")
+    await callback_query.answer()
 
 
 async def recipe_to_diary(callback_query: CallbackQuery, state: FSMContext):

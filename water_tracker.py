@@ -23,7 +23,7 @@ async def water_tracker(message: types.Message, state: FSMContext):
     user = get_user(user_id)
 
     if not user:
-        await message.answer("Сначала нужно зарегистрироваться. Нажмите 🚀 Погнали!")
+        await message.answer("Сначала нужно зарегистрироваться!")
         return
 
     # Получаем текущую дату

@@ -3,12 +3,8 @@ from datetime import datetime
 from aiogram import Router, F, types
 from aiogram.filters import Command, CommandStart, StateFilter
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
-
-from aiogram.filters import Command
-from database import execute_query
 
 from config import ACTIVITY_LEVELS
 from utils import calculate_bmi, get_bmi_category, calculate_tdee, get_goal_calories, calculate_macronutrients
@@ -32,9 +28,11 @@ from water_tracker import (
 )
 from meal_planner import (
     show_meal_planner, handle_plan_date_selection, start_add_to_plan,
-    handle_meal_type_selection, handle_recipe_selection,
-    view_meal_type_plan, transfer_plan_to_diary, clear_plan,
-    show_daily_plan, MealPlanStates
+    handle_meal_type_selection, handle_recipe_selection, view_meal_type_plan,
+    delete_plan_entry, clear_plan, confirm_clear_plan, cancel_clear_plan,
+    transfer_plan_to_diary, generate_meal_plan, return_to_plan_view,
+    handle_meal_plan_menu, handle_replace_dish, confirm_replace_dish,
+    generate_daily_meal_plan, generate_weekly_meal_plan
 )
 from recipe_generator import (
     show_recipes_menu, handle_recipes_callback, view_recipe_details,
@@ -43,9 +41,10 @@ from recipe_generator import (
     process_recipe_ingredients, process_recipe_instructions,
     process_recipe_calories, process_recipe_protein,
     process_recipe_fat, process_recipe_carbs, save_recipe_handler,
-    cancel_recipe_creation, generate_recipe, recipe_to_diary,process_search_query, show_search_results, handle_search_page,
+    cancel_recipe_creation, generate_recipe, recipe_to_diary, process_search_query, show_search_results,
+    handle_search_page,
     toggle_favorite_handler, add_to_menu_handler, show_favorites,
-    show_favorites_page, process_recipe_photo,
+    show_favorites_page,
     view_favorite_recipe, RecipeStates
 )
 from visualizer import (
@@ -53,14 +52,36 @@ from visualizer import (
     VisualizationStates
 )
 
+from consultation import (
+    show_consultation_menu, handle_consultation_callback,
+    ConsultationStates
+)
 
+from articles import (
+    show_articles_menu, handle_articles_callback,
+    ArticlesStates
+)
 
+from weight_reports import (
+    show_weight_reports_menu, handle_weight_reports_callback,
+    process_weight_input, WeightReportStates
+)
+
+from shopping_cart import (
+    show_shopping_cart_menu, handle_shopping_cart_callback,
+    process_manual_item, ShoppingCartStates
+)
+
+# Настройка логирования
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 class ProfileStates(StatesGroup):
     editing_weight = State()
     editing_goal = State()
     editing_activity = State()
+
 
 # Состояния для регистрации пользователя
 class RegistrationStates(StatesGroup):
@@ -73,14 +94,108 @@ class RegistrationStates(StatesGroup):
     waiting_for_goal = State()
 
 
-# Настройка логирования
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
 def register_handlers(dp):
     """Регистрирует все обработчики."""
     router = Router()
-    router.callback_query.register(handle_statistics_callback, F.data.startswith("stats:"))
+
+    # обработчик для поиска и добавления блюд
+    @router.callback_query(F.data == "back_to_favorites")
+    async def back_to_favorites_handler(callback_query: CallbackQuery, state: FSMContext):
+        """Возвращает к списку избранных рецептов."""
+        await show_favorites_page(callback_query, state)
+
+    router.callback_query.register(save_recipe_handler, F.data == "recipe:save")
+    router.callback_query.register(cancel_recipe_creation, F.data == "recipe:cancel")
+
+    router.callback_query.register(handle_recipes_callback, F.data.startswith("recipe:"))
+    router.message.register(process_search_query, StateFilter(RecipeStates.searching))
+    router.callback_query.register(handle_search_page, F.data.startswith("search_page:"))
+    router.callback_query.register(view_recipe_details, F.data.startswith("view_recipe:"))
+    router.callback_query.register(toggle_favorite_handler, F.data.startswith("toggle_fav:"))
+    router.callback_query.register(add_to_menu_handler, F.data.startswith("add_to_menu:"))
+    router.callback_query.register(show_favorites_page, F.data.startswith("fav_page:"))
+    router.callback_query.register(view_favorite_recipe, F.data.startswith("view_fav_recipe:"))
+    router.callback_query.register(back_to_favorites_handler, F.data == "back_to_favorites")
+    router.message.register(process_recipe_name, StateFilter(RecipeStates.entering_name))
+    router.message.register(process_recipe_ingredients, StateFilter(RecipeStates.entering_ingredients))
+    router.message.register(process_recipe_instructions, StateFilter(RecipeStates.entering_instructions))
+    router.message.register(process_recipe_calories, StateFilter(RecipeStates.entering_calories))
+    router.message.register(process_recipe_protein, StateFilter(RecipeStates.entering_protein))
+    router.message.register(process_recipe_fat, StateFilter(RecipeStates.entering_fat))
+    router.message.register(process_recipe_carbs, StateFilter(RecipeStates.entering_carbs))
+    # Обработчики состояний рецептов уже зарегистрированы ниже
+
+    # Обработчики для консультации с диетологом
+    router.message.register(
+        show_consultation_menu,
+        F.text == "🩺 Консультация с диетологом"
+    )
+    router.callback_query.register(
+        handle_consultation_callback,
+        F.data.startswith("consultation:")
+    )
+    # Обработчики для статей
+    router.message.register(
+        show_articles_menu,
+        F.text == "📚 Статьи"
+    )
+    router.callback_query.register(
+        handle_articles_callback,
+        F.data.startswith("articles:")
+    )
+
+    # Обработчики для отчетов веса
+    router.message.register(
+        show_weight_reports_menu,
+        F.text == "📈 Отчет"
+    )
+    router.callback_query.register(
+        handle_weight_reports_callback,
+        F.data.startswith("weight:")
+    )
+    router.message.register(
+        process_weight_input,
+        StateFilter(WeightReportStates.entering_weight)
+    )
+
+    # Обработчики для продуктовой корзины
+    router.message.register(
+        show_shopping_cart_menu,
+        F.text == "🛒 Продуктовая корзина"
+    )
+    router.callback_query.register(
+        handle_shopping_cart_callback,
+        F.data.startswith("cart:")
+    )
+    router.message.register(
+        process_manual_item,
+        StateFilter(ShoppingCartStates.adding_manual_item)
+    )
+
+    @router.callback_query(F.data == "back_to_search")
+    async def back_to_search_handler(callback_query: CallbackQuery, state: FSMContext):
+        """Возвращает к результатам поиска"""
+        try:
+            data = await state.get_data()
+            if 'search_results' in data:
+                from recipe_generator import show_search_results  # Добавляем импорт
+                await show_search_results(callback_query, state, data.get('current_page', 0))
+            else:
+                from recipe_generator import show_recipes_menu  # Добавляем импорт
+                await show_recipes_menu(callback_query.message, state)
+            await callback_query.answer()
+        except Exception as e:
+            logger.error(f"Ошибка в back_to_search_handler: {e}")
+            await callback_query.answer("❌ Ошибка возврата к поиску")
+
+    # Обработчики профиля
+    router.callback_query.register(edit_weight_handler, F.data == "edit_weight")
+    router.callback_query.register(edit_goal_handler, F.data == "edit_goal")
+    router.callback_query.register(edit_activity_handler, F.data == "edit_activity")
+    router.callback_query.register(recalculate_handler, F.data == "recalculate")
+    router.callback_query.register(profile_back_handler, F.data == "profile_back")
+
+    # Обработчики состояний профиля определены отдельно ниже
 
     # Обработчик для трекера воды
     router.callback_query.register(add_water_amount, F.data.startswith("water_add:"))
@@ -92,165 +207,24 @@ def register_handlers(dp):
     router.callback_query.register(water_tracker, F.data == "water_tracker")  # Для кнопки "Назад"
     router.message.register(process_water_amount, StateFilter(WaterStates.entering_amount))
     router.message.register(process_water_goal, StateFilter(WaterStates.setting_goal))
-    # обработчик для поиска и добавления блюд
-    @router.callback_query(F.data == "back_to_favorites")
-    async def back_to_favorites_handler(callback_query: CallbackQuery, state: FSMContext):
-        """Возвращает к списку избранных рецептов."""
-        await show_favorites_page(callback_query, state)
-
-    router.callback_query.register(start_recipe_creation, F.data == "recipe:create")
-
-    # Ввод данных о рецепте
-    router.message.register(process_recipe_name, StateFilter(RecipeStates.entering_name))
-    router.message.register(process_recipe_ingredients, StateFilter(RecipeStates.entering_ingredients))
-    router.message.register(process_recipe_instructions, StateFilter(RecipeStates.entering_instructions))
-    router.message.register(process_recipe_calories, StateFilter(RecipeStates.entering_calories))
-    router.message.register(process_recipe_protein, StateFilter(RecipeStates.entering_protein))
-    router.message.register(process_recipe_fat, StateFilter(RecipeStates.entering_fat))
-    router.message.register(process_recipe_carbs, StateFilter(RecipeStates.entering_carbs))
-    router.message.register(process_recipe_photo, StateFilter(RecipeStates.entering_photo))
-    router.message.register(save_recipe_handler, StateFilter(RecipeStates.confirming))
-    router.callback_query.register(handle_recipes_callback, F.data.startswith("recipe:"))
-    router.message.register(process_search_query, StateFilter(RecipeStates.searching))
-    router.callback_query.register(handle_search_page, F.data.startswith("search_page:"))
-    router.callback_query.register(view_recipe_details, F.data.startswith("view_recipe:"))
-    router.callback_query.register(toggle_favorite_handler, F.data.startswith("toggle_fav:"))
-    router.callback_query.register(add_to_menu_handler, F.data.startswith("add_to_menu:"))
-    router.callback_query.register(show_favorites_page, F.data.startswith("fav_page:"))
-    router.callback_query.register(view_favorite_recipe, F.data.startswith("view_fav_recipe:"))
-    router.callback_query.register(back_to_favorites_handler, F.data == "back_to_favorites")
-
-    # Колбэки
-    router.callback_query.register(handle_food_selection, F.data.startswith("select_food:"))
-    router.message.register(process_food_entry, StateFilter(DiaryStates.entering_food))
-    router.message.register(process_food_amount, StateFilter(DiaryStates.entering_amount))
-    router.callback_query.register(handle_diary_callback)
-    router.callback_query.register(confirm_food_entry, F.data == "confirm_food")
-    router.callback_query.register(cancel_food_entry, F.data == "cancel_food")
-    router.callback_query.register(confirm_clear_diary, F.data == "confirm_clear")
-    router.callback_query.register(cancel_clear_diary, F.data == "cancel_clear")
-    router.callback_query.register(handle_recent_food_selection, F.data.startswith("recent_food:"))
-    router.callback_query.register(return_to_meal_selection, F.data == "return_to_meal_selection")
-    router.callback_query.register(show_diary, F.data == "return_to_diary")
-
-
-    # Обработчики профиля
-    router.callback_query.register(edit_weight_handler, F.data == "edit_weight")
-    router.callback_query.register(edit_goal_handler, F.data == "edit_goal")
-    router.callback_query.register(edit_activity_handler, F.data == "edit_activity")
-    router.callback_query.register(recalculate_handler, F.data == "recalculate")
-    router.callback_query.register(profile_back_handler, F.data == "profile_back")
-
-
-    @router.message(ProfileStates.editing_weight)
-    async def process_new_weight(message: Message, state: FSMContext):
-        try:
-            new_weight = float(message.text)
-            if new_weight < 30 or new_weight > 300:
-                raise ValueError
-            user_id = message.from_user.id
-            update_user(message.from_user.id, weight=new_weight)
-
-            user = get_user(user_id)
-            tdee = calculate_tdee(
-                weight=new_weight,
-                height=user['height'],
-                age=user['age'],
-                activity_level=user['activity_level'],
-                sex=user['gender']
-            )
-            new_calories = get_goal_calories(tdee, user['goal'])
-            update_user(user_id, goal_calories=new_calories)
-
-            await message.answer("✔️ Вес обновлен!")
-            await show_profile(message)
-        except ValueError:
-            await message.answer("❌ Введите корректное число")
-        await state.clear()
-
-        # Обработчик нового веса
-        @router.message(ProfileStates.editing_weight)
-        async def process_new_weight(message: Message, state: FSMContext):
-            try:
-                new_weight = float(message.text)
-                if new_weight < 30 or new_weight > 300:
-                    raise ValueError
-                user_id = message.from_user.id
-                update_user(message.from_user.id, weight=new_weight)
-
-                user = get_user(user_id)
-                tdee = calculate_tdee(
-                    weight=new_weight,
-                    height=user['height'],
-                    age=user['age'],
-                    activity_level=user['activity_level'],
-                    sex=user['gender']
-                )
-                new_calories = get_goal_calories(tdee, user['goal'])
-                #update_user(user_id, goal_calories=new_calories)
-                macros = calculate_macronutrients(new_calories, new_weight, user['goal'])
-                update_user(
-                    user_id,
-                    goal_calories=new_calories,
-                    protein=macros['protein'],
-                    fat=macros['fat'],
-                    carbs=macros['carbs']
-                )
-                await message.answer("✔️ Вес успешно обновлен!")
-                await show_profile(message)
-            except ValueError:
-                await message.answer("❌ Введите корректный вес (30-300 кг)")
-
-            await state.clear()
-
-        # Обработчик новой цели
-        @router.message(ProfileStates.editing_goal)
-        async def process_new_goal(message: Message, state: FSMContext):
-            valid_goals = ["🔻 Похудение", "🔺 Набор веса", "🔄 Поддержание веса"]
-            if message.text not in valid_goals:
-                await message.answer("❌ Выберите цель из предложенных вариантов")
-                return
-            user_id = message.from_user.id
-            update_user(message.from_user.id, goal=message.text)
-
-            # Пересчет калорий
-            user = get_user(user_id)
-            tdee = calculate_tdee(
-                weight=user['weight'],
-                height=user['height'],
-                age=user['age'],
-                activity_level=user['activity_level'],
-                sex=user['gender']
-            )
-            new_calories = get_goal_calories(tdee, message.text)
-            update_user(user_id, goal_calories=new_calories)
-
-            await message.answer("✔️ Цель успешно обновлена!")
-            await show_profile(message)
-            await state.clear()
-
-        # Обработчик новой активности
-        @router.message(ProfileStates.editing_activity)
-        async def process_new_activity(message: Message, state: FSMContext):
-            valid_activities = list(ACTIVITY_LEVELS.keys())
-            if message.text not in valid_activities:
-                await message.answer("❌ Выберите уровень активности из предложенных")
-                return
-
-            update_user(message.from_user.id, activity_level=message.text)
-            await message.answer("✔️ Уровень активности обновлен!")
-            await show_profile(message)
-            await state.clear()
-
-
 
     # Команды
     router.message.register(cmd_start, CommandStart())
     router.message.register(cmd_help, Command("help"))
     router.message.register(cmd_about, Command("about"))
 
+    # Обработчики inline-кнопок стартового меню
+    router.callback_query.register(about_bot_callback, F.data == "about_bot")
+    #router.callback_query.register(start_registration_callback, F.data == "register")
+    router.callback_query.register(back_to_start, F.data == "back_to_start")
+
+    # Обработчик кнопки "О боте" (оставляем для совместимости)
+    router.message.register(about_bot, F.text == "ℹ️ О боте")
+
+    # Обработчик кнопки "🚀 Зарегистрироваться" (оставляем для совместимости)
+    router.message.register(start_registration, F.text == "🚀 Зарегистрироваться")
+
     # Обработка стартовых действий
-    router.message.register(start_registration, F.text == "🚀 Поехали!")
     router.message.register(show_about, F.text == "ℹ️ О боте")
 
     # Регистрация пользователя
@@ -262,35 +236,75 @@ def register_handlers(dp):
     router.message.register(process_activity, StateFilter(RegistrationStates.waiting_for_activity))
     router.message.register(process_goal, StateFilter(RegistrationStates.waiting_for_goal))
 
-    # Основное меню после регистрации
-    router.message.register(show_diary, F.text == "📝 Мой дневник")
-    router.message.register(water_tracker, F.text == "💧 Водный баланс")
-    router.message.register(show_meal_planner, F.text == "🍽 Рацион на день")
-    router.message.register(show_recipes_menu, F.text == "🔄 Рецепты")
+    # Обработчики основного меню
     router.message.register(show_profile, F.text == "👤 Профиль")
-    router.message.register(show_statistics, F.text == "📈 Моя статистика")
+    router.message.register(show_diary, F.text == "📖 Мой дневник")
+    router.message.register(show_meal_planner, F.text == "🍽 Рацион")
+    router.message.register(show_recipes_menu, F.text == "🍳 Рецепты")
+    router.message.register(water_tracker, F.text == "💧 Трекер воды")
+    router.message.register(show_statistics, F.text == "📊 Статистика")
+    router.message.register(show_consultation, F.text == "🩺 Консультация с диетологом")
+    router.message.register(show_shopping_cart, F.text == "🛒 Продуктовая корзина")
+    router.message.register(show_articles, F.text == "📚 Статьи")
+    router.message.register(show_reports, F.text == "📈 Отчет")
 
-    # Обработчики callback-ов для статистики
-    router.callback_query.register(handle_statistics_callback, F.data.startswith("stats:"))
-    router.callback_query.register(show_water_statistics, F.data == "stats:water")
+    # Обработчики callback для рациона - ВАЖНО: должны быть ПЕРЕД другими обработчиками
+    router.callback_query.register(handle_meal_plan_menu, F.data.startswith("meal_plan:"))
 
+    # Колбэки
+    router.callback_query.register(handle_diary_callback)
+    router.callback_query.register(handle_food_selection, F.data.startswith("select_food:"))
+    # router.callback_query.register(handle_food_selection, F.data.startswith("food:"))  # если используешь где-то ещё
+    router.callback_query.register(confirm_food_entry, F.data == "confirm_food")
+    router.callback_query.register(cancel_food_entry, F.data == "cancel_food")
+    router.callback_query.register(confirm_clear_diary, F.data == "confirm_clear")
+    router.callback_query.register(cancel_clear_diary, F.data == "cancel_clear")
+    router.callback_query.register(handle_recent_food_selection, F.data.startswith("recent_food:"))
+    router.callback_query.register(return_to_meal_selection, F.data == "return_to_meal_selection")
+
+    # Обработчик возврата к дневнику из meal_planner
+    @router.callback_query(F.data == "return_to_diary")
+    async def return_to_diary_handler(callback_query: CallbackQuery, state: FSMContext):
+        """Возвращает к дневнику из рациона."""
+        try:
+            await callback_query.message.delete()
+        except:
+            pass
+        await show_diary(callback_query.message, state)
+        await callback_query.answer()
 
     router.callback_query.register(handle_plan_date_selection, F.data.startswith("plan_date:"))
     router.callback_query.register(start_add_to_plan, F.data == "plan:add")
     router.callback_query.register(handle_meal_type_selection,
                                    F.data.startswith("meal_type:") & ~StateFilter(DiaryStates))
     router.callback_query.register(handle_recipe_selection, F.data.startswith("plan_recipe:"))
-    router.callback_query.register(view_meal_type_plan, F.data.startswith("plan:"))
-    router.callback_query.register(transfer_plan_to_diary, F.data == "plan:to_diary")
+    router.callback_query.register(view_meal_type_plan, F.data.startswith("plan:") & F.data.contains(":") & ~F.data.in_(
+        ["plan:add", "plan:generate", "plan:to_diary", "plan:clear", "plan:back"]))
+    router.callback_query.register(delete_plan_entry, F.data.startswith("delete_plan_entry:"))
     router.callback_query.register(clear_plan, F.data == "plan:clear")
-    router.callback_query.register(return_to_main_menu, F.data == "plan:back")
+    router.callback_query.register(confirm_clear_plan, F.data.startswith("confirm_clear_plan:"))
+    router.callback_query.register(cancel_clear_plan, F.data == "cancel_clear_plan")
+    router.callback_query.register(transfer_plan_to_diary, F.data == "plan:to_diary")
+    router.callback_query.register(generate_meal_plan, F.data == "plan:generate")
+    router.callback_query.register(return_to_plan_view, F.data == "return_to_plan_view")
 
+    # Обработчики для рациона - дополнительные
+    router.callback_query.register(handle_replace_dish, F.data.startswith("replace_dish:"))
+    router.callback_query.register(confirm_replace_dish, F.data.startswith("confirm_replace:"))
+
+    # Импортируем новые функции
+    from meal_planner import save_whole_plan_to_diary, show_plan_for_date, handle_save_plan_to_diary
+    router.callback_query.register(save_whole_plan_to_diary, F.data.startswith("save_plan_to_diary:"))
+    router.callback_query.register(handle_save_plan_to_diary, F.data.startswith("save_plan_to_diary:"))
+    router.callback_query.register(show_plan_for_date, F.data.startswith("show_plan:"))
+    router.callback_query.register(transfer_plan_to_diary, F.data == "plan:to_diary")
 
     router.callback_query.register(toggle_recipe_favorite_status, F.data.startswith("toggle_favorite:"))
     router.callback_query.register(delete_recipe_handler, F.data.startswith("delete_recipe:"))
     router.callback_query.register(return_to_recipes_menu, F.data == "return_to_recipes")
     router.callback_query.register(recipe_to_diary, F.data.startswith("recipe_to_diary:"))
 
+    router.callback_query.register(handle_statistics_callback, F.data.startswith("stats:"))
 
     from diary import (
         add_product_handler,
@@ -302,7 +316,6 @@ def register_handlers(dp):
     router.callback_query.register(enter_weight_handler, F.data.startswith("enter_weight:"))
     router.callback_query.register(back_to_list_handler, F.data == "back_to_list")
 
-
     # Обработка состояний
     router.message.register(process_food_entry, StateFilter(DiaryStates.entering_food))
     router.message.register(process_food_amount, StateFilter(DiaryStates.entering_amount))
@@ -310,17 +323,15 @@ def register_handlers(dp):
     router.message.register(process_water_amount, StateFilter(WaterStates.entering_amount))
     router.message.register(process_water_goal, StateFilter(WaterStates.setting_goal))
 
-    router.message.register(process_recipe_name, StateFilter(RecipeStates.entering_name))
-    router.message.register(process_recipe_ingredients, StateFilter(RecipeStates.entering_ingredients))
-    router.message.register(process_recipe_instructions, StateFilter(RecipeStates.entering_instructions))
-    router.message.register(process_recipe_calories, StateFilter(RecipeStates.entering_calories))
-    router.message.register(process_recipe_protein, StateFilter(RecipeStates.entering_protein))
-    router.message.register(process_recipe_fat, StateFilter(RecipeStates.entering_fat))
-    router.message.register(process_recipe_carbs, StateFilter(RecipeStates.entering_carbs))
+
+
+    # Обработчики состояний профиля
+    router.message.register(process_new_weight, StateFilter(ProfileStates.editing_weight))
+    router.message.register(process_new_goal, StateFilter(ProfileStates.editing_goal))
+    router.message.register(process_new_activity, StateFilter(ProfileStates.editing_activity))
 
     # Добавляем роутер в диспетчер
     dp.include_router(router)
-
 
 
 async def cmd_start(message: Message, state: FSMContext):
@@ -335,20 +346,21 @@ async def cmd_start(message: Message, state: FSMContext):
     if not user:
         # Создаем базовую запись для пользователя
         create_user(user_id, message.from_user.first_name)
-        await message.answer_photo(
-            photo="https://th.bing.com/th/id/R.ad13a9b7c55380d39f419b6e650397ac?rik=pePyj3wO4JU8Bg&riu=http%3a%2f%2flaevia.it%2fcdn%2fshop%2farticles%2fDA_allergie_alimentari_header_low.webp%3fv%3d1709046925&ehk=nWl2hHOZYk9hkHkjaYclZBt%2b3ichhf83unVQbKM2udc%3d&risl=&pid=ImgRaw&r=0",
-            # Добавь сюда ссылку на картинку
-            caption=(f"👋 Привет, {message.from_user.first_name}!\n\n"
+
+        # Отправляем приветственное сообщение
+        await message.answer(
+            f"Привет, {message.from_user.first_name}!\n\n"
             "🍏 Я твой персональный помощник по диетологии и правильному питанию.\n\n"
             "Я помогу тебе:\n"
-            "✅ Рассчитать <b>идеальную норму калорий</b> для твоей цели\n"
-            "✅ Составить <b>вкусный и сбалансированный рацион</b>\n"
+            "✅ Рассчитать идеальную норму калорий для твоей цели\n"
+            "✅ Составить вкусный и сбалансированный рацион\n"
             "✅ Вести дневник питания\n"
             "✅ Следить за водным балансом\n"
             "✅ Дать рекомендации по питанию, учитывая твой образ жизни и активность 🚴‍♂️🏋️\n"
             "✅ Поддерживать мотивацию на пути к лучшей версии себя! 🔥\n\n"
-            "Готов начать? Тогда жми на кнопки ниже и поехали! 🚀"),
-            reply_markup=start_keyboard, parse_mode="HTML")
+            "Готов начать? Тогда жми на кнопки ниже и поехали! 🚀",
+            reply_markup=start_keyboard
+        )
     else:
         # Проверяем, завершил ли пользователь регистрацию (указал ли цель по калориям)
         if not user.get('goal_calories'):
@@ -561,8 +573,7 @@ async def process_weight(message: Message, state: FSMContext):
         await message.answer("Пожалуйста, введите корректный вес (от 30 до 300 кг).")
         return
 
-    # Сохраняем вес
-    await state.update_data(weight=weight)
+    await state.update_data(weight=weight) # Сохраняем вес
 
     # Обновляем вес в БД
     user_id = message.from_user.id
@@ -704,7 +715,7 @@ async def show_profile(message: Message):
     user = get_user(user_id)
 
     if not user:
-        await message.answer("Сначала нужно зарегистрироваться. Нажмите 🚀 Поехали!")
+        await message.answer("Сначала нужно зарегистрироваться. Нажмите 🚀 Зарегистрироваться!")
         return
 
     # Рассчитываем ИМТ
@@ -756,6 +767,76 @@ async def show_profile(message: Message):
     )
 
 
+async def about_bot(message: Message):
+    """Информация о боте."""
+    help_text = (
+        "🤖 <b>О боте Diet Planner</b>\n\n"
+        "Я помогаю составлять персональный план питания на основе ваших целей.\n\n"
+        "<b>Мои возможности:</b>\n"
+        "• Расчет ИМТ и дневной нормы калорий\n"
+        "• Ведение дневника питания\n"
+        "• Трекер потребления воды\n"
+        "• Планирование рациона\n"
+        "• База рецептов\n"
+        "• Статистика и прогресс\n\n"
+        "Для начала работы нажмите 🚀 Погнали!"
+    )
+
+    await message.answer(help_text, parse_mode="HTML", reply_markup=start_keyboard)
+
+
+async def about_bot_callback(callback_query: CallbackQuery):
+    """Обработчик inline-кнопки 'О боте'."""
+    text = (
+        "Я — Fit&Food, твой персональный помощник по питанию и здоровому образу жизни! 🍏💪\n\n"
+        "Я помогу тебе:\n"
+        "✅ Рассчитать *идеальную норму калорий* для твоей цели.\n"
+        "✅ Составить вкусный и сбалансированный рацион. 🍽\n"
+        "✅ Дать рекомендации по питанию, учитывая твой образ жизни и активность. 🚴‍♂️🏋️\n"
+        "✅ Поддерживать мотивацию на пути к лучшей версии себя! 🔥\n\n"
+        "Моя миссия — сделать твое питание простым, понятным и эффективным. 💯"
+    )
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Назад", callback_data="back_to_start")],
+            [InlineKeyboardButton(text="Помощь", callback_data="help")]
+        ]
+    )
+
+    await callback_query.message.edit_text(text, parse_mode="Markdown", reply_markup=keyboard)
+
+
+async def start_registration_callback(callback_query: CallbackQuery, state: FSMContext):
+    """Обработчик inline-кнопки 'Зарегистрироваться'."""
+    await callback_query.message.edit_text(
+        "👶 Начинаем регистрацию\n\n"
+        "Для составления персонального плана питания мне нужно собрать немного информации о тебе."
+    )
+
+    await callback_query.message.answer("Для начала напишите свой возраст.")
+    await state.set_state(RegistrationStates.age)
+
+
+async def back_to_start(callback_query: CallbackQuery):
+    """Возврат к стартовому сообщению."""
+    text = (
+        f"Привет, {callback_query.from_user.first_name}!\n\n"
+        "🍏 Я твой персональный помощник по диетологии и правильному питанию.\n\n"
+        "Я помогу тебе:\n"
+        "✅ Рассчитать идеальную норму калорий для твоей цели\n"
+        "✅ Составить вкусный и сбалансированный рацион\n"
+        "✅ Вести дневник питания\n"
+        "✅ Следить за водным балансом\n"
+        "✅ Дать рекомендации по питанию, учитывая твой образ жизни и активность 🚴‍♂️🏋️\n"
+        "✅ Поддерживать мотивацию на пути к лучшей версии себя! 🔥\n\n"
+        "Готов начать? Тогда жми на кнопки ниже и поехали! 🚀"
+    )
+
+    await callback_query.message.edit_text(text, reply_markup=start_keyboard)
+
+
+# Добавьте эти функции в handlers.py
 async def edit_weight_handler(callback_query: CallbackQuery, state: FSMContext):
     await callback_query.message.answer("Введите новый вес (кг):")
     await state.set_state(ProfileStates.editing_weight)
@@ -805,6 +886,7 @@ async def recalculate_handler(callback_query: CallbackQuery, state: FSMContext):
         logger.error(f"Ошибка пересчета: {e}")
         await callback_query.answer("❌ Ошибка пересчета")
 
+
 async def profile_back_handler(callback_query: CallbackQuery):
     """Обработчик кнопки 'Назад' в профиле"""
     try:
@@ -819,6 +901,109 @@ async def profile_back_handler(callback_query: CallbackQuery):
     except Exception as e:
         logger.error(f"Ошибка в profile_back_handler: {e}")
         await callback_query.answer("❌ Ошибка возврата в меню", show_alert=True)
+
+
+# Обработчики состояний профиля
+async def process_new_weight(message: Message, state: FSMContext):
+    try:
+        new_weight = float(message.text)
+        if new_weight < 30 or new_weight > 300:
+            raise ValueError
+        user_id = message.from_user.id
+
+        user = get_user(user_id)
+        tdee = calculate_tdee(
+            weight=new_weight,
+            height=user['height'],
+            age=user['age'],
+            activity_level=user['activity_level'],
+            sex=user['gender']
+        )
+        new_calories = get_goal_calories(tdee, user['goal'])
+        macros = calculate_macronutrients(new_calories, new_weight, user['goal'])
+
+        update_user(
+            user_id,
+            weight=new_weight,
+            goal_calories=new_calories,
+            protein=macros['protein'],
+            fat=macros['fat'],
+            carbs=macros['carbs']
+        )
+        await message.answer("✔️ Вес успешно обновлен!")
+        await show_profile(message)
+    except ValueError:
+        await message.answer("❌ Введите корректный вес (30-300 кг)")
+
+    await state.clear()
+
+
+async def process_new_goal(message: Message, state: FSMContext):
+    valid_goals = ["🔻 Похудение", "🔺 Набор веса", "🔄 Поддержание текущего веса"]
+    if message.text not in valid_goals:
+        await message.answer("❌ Выберите цель из предложенных вариантов")
+        return
+
+    user_id = message.from_user.id
+    user = get_user(user_id)
+
+    # Пересчет калорий
+    tdee = calculate_tdee(
+        weight=user['weight'],
+        height=user['height'],
+        age=user['age'],
+        activity_level=user['activity_level'],
+        sex=user['gender']
+    )
+    new_calories = get_goal_calories(tdee, message.text)
+    macros = calculate_macronutrients(new_calories, user['weight'], message.text)
+
+    update_user(
+        user_id,
+        goal=message.text,
+        goal_calories=new_calories,
+        protein=macros['protein'],
+        fat=macros['fat'],
+        carbs=macros['carbs']
+    )
+
+    await message.answer("✔️ Цель успешно обновлена!")
+    await show_profile(message)
+    await state.clear()
+
+
+async def process_new_activity(message: Message, state: FSMContext):
+    valid_activities = list(ACTIVITY_LEVELS.keys())
+    if message.text not in valid_activities:
+        await message.answer("❌ Выберите уровень активности из предложенных")
+        return
+
+    user_id = message.from_user.id
+    user = get_user(user_id)
+
+    # Пересчет калорий с новой активностью
+    tdee = calculate_tdee(
+        weight=user['weight'],
+        height=user['height'],
+        age=user['age'],
+        activity_level=message.text,
+        sex=user['gender']
+    )
+    new_calories = get_goal_calories(tdee, user['goal'])
+    macros = calculate_macronutrients(new_calories, user['weight'], user['goal'])
+
+    update_user(
+        user_id,
+        activity_level=message.text,
+        goal_calories=new_calories,
+        protein=macros['protein'],
+        fat=macros['fat'],
+        carbs=macros['carbs']
+    )
+
+    await message.answer("✔️ Уровень активности обновлен!")
+    await show_profile(message)
+    await state.clear()
 
 
 async def set_water_goal(callback_query: CallbackQuery, state: FSMContext):
@@ -836,6 +1021,7 @@ async def set_water_goal(callback_query: CallbackQuery, state: FSMContext):
     await water_tracker(callback_query.message, state)
     await callback_query.answer()
 
+
 async def show_recipes_menu(message: Message):
     await message.answer(
         "🍴 Меню рецептов\n\nЗдесь ты можешь найти, сохранить или создать новые рецепты.",
@@ -843,3 +1029,66 @@ async def show_recipes_menu(message: Message):
     )
 
 
+async def show_consultation(message: Message):
+    """Показывает раздел консультации с диетологом."""
+    text = (
+        "🩺 <b>Консультация с диетологом</b>\n\n"
+        "Персональные рекомендации от квалифицированных специалистов помогут вам "
+        "достичь ваших целей в питании более эффективно и безопасно.\n\n"
+        "💡 <b>Почему это важно:</b>\n"
+        "• Индивидуальный подход к вашему здоровью\n"
+        "• Учет особенностей организма и заболеваний\n"
+        "• Профессиональная корректировка рациона\n"
+        "• Поддержка на пути к цели\n\n"
+        "🔧 <i>Раздел в разработке</i>"
+    )
+    await message.answer(text, parse_mode="HTML")
+
+
+async def show_shopping_cart(message: Message):
+    """Показывает продуктовую корзину."""
+    text = (
+        "🛒 <b>Продуктовая корзина</b>\n\n"
+        "Автоматически формируйте список покупок на основе вашего рациона!\n\n"
+        "📋 <b>Возможности:</b>\n"
+        "• Автоматическое составление списка из рациона\n"
+        "• Группировка продуктов по категориям\n"
+        "• Отметка купленных товаров\n"
+        "• Расчет количества на несколько дней\n\n"
+        "🔧 <i>Раздел в разработке</i>"
+    )
+    await message.answer(text, parse_mode="HTML")
+
+
+async def show_articles(message: Message):
+    """Показывает раздел статей."""
+    text = (
+        "📚 <b>Образовательные статьи</b>\n\n"
+        "Расширьте свои знания о правильном питании!\n\n"
+        "📖 <b>Темы статей:</b>\n"
+        "• Основы здорового питания\n"
+        "• Витамины и микроэлементы\n"
+        "• Психология пищевого поведения\n"
+        "• Интервальное голодание\n"
+        "• Спортивное питание\n"
+        "• Питание при различных заболеваниях\n\n"
+        "🔧 <i>Раздел в разработке</i>"
+    )
+    await message.answer(text, parse_mode="HTML")
+
+
+async def show_reports(message: Message):
+    """Показывает раздел отчетов."""
+    text = (
+        "📈 <b>Отчеты и прогресс</b>\n\n"
+        "Отслеживайте свой прогресс в достижении целей!\n\n"
+        "📊 <b>Доступные отчеты:</b>\n"
+        "• Динамика веса\n"
+        "• Соблюдение калорийности\n"
+        "• Баланс БЖУ\n"
+        "• Потребление воды\n"
+        "• Ежедневные записи\n\n"
+        "💡 <i>Регулярно вводите свой вес для точной статистики</i>\n\n"
+        "🔧 <i>Раздел в разработке</i>"
+    )
+    await message.answer(text, parse_mode="HTML")
